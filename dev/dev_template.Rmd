@@ -1,0 +1,190 @@
+---
+title: "IATI Visualisation"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r developmenttest, include=FALSE, message=FALSE, warning=FALSE}
+library(testthat) 
+library(ggplot2)
+library(dplyr)
+# Load already included functions
+pkgload::load_all(export_all = FALSE)
+```
+
+
+  
+# Template
+
+## template_prez
+    
+```{r function-template_prez}
+
+# usethis::use_rmarkdown_template(
+#   template_name = "iati_prez",
+#   template_dir = NULL,
+#   template_description = "UNHCR IATI",
+#   template_create_dir = TRUE
+# )
+
+
+#' Generate a summary powerpoint
+#' 
+#' @param year A numeric value or a vector of numeric value to filter on year. Note that data pre-2022 are using a different set of indicators
+#' @param ctr_name A character vector corresponding to the name of the country.
+#' @param folder folder within your project where to put the generated report. 
+#'              Folder will be created if it does not exist
+#' 
+#' @importFrom unhcrdown pptx_slides
+#' @importFrom dplyr filter select pull
+#' @importFrom rmarkdown render
+#' @importFrom here here
+#' @importFrom countrycode countrycode
+#' @importFrom stringr str_replace_all
+#' 
+#' @return nothing the file for the report is generated
+#' 
+#' @export 
+#'
+template_prez <- function(year = 2025,
+                          ctr_name,   
+                          folder = "Prez") {
+  
+  ## Create the outfolder if it does not exist
+  output_dir <- paste0(getwd(),"/",folder)
+  if (!dir.exists(output_dir)) {dir.create(output_dir)}
+  
+  rmarkdown::render(
+    system.file("rmarkdown/templates/iati_prez/skeleton/skeleton.Rmd", package = "iati"),
+    output_file = here::here(folder, paste0('Strategic_Moment_of_Reflection-',
+                                            stringr::str_replace_all( 
+                           countrycode::countrycode(ctr_name,
+                                               origin = "country.name",
+                                               destination = "unhcr.region"), " ", "_"),
+                                            "__",
+                                            stringr::str_replace_all( ctr_name, " ", "_"),
+                        '-', year, '.pptx') ),
+    params = list(ctr_name = ctr_name, 
+                  year = year)  )
+}
+```
+  
+```{r example-template_prez}
+
+## generate for one country
+# iati::template_prez(year = 2025, 
+#                     ctr_name = "Brazil",
+#                     folder = "dev/Prez")
+
+# ## Generate for all operation specific region
+# reg <- iati::dataActivity |>
+#   dplyr::select( unhcr_region) |>
+#   dplyr::filter(! is.na(unhcr_region)) |>
+#   dplyr::distinct() |>
+#   dplyr::pull() 
+# 
+# thisfolder <- "dev/SMR" 
+# 
+# for (region in reg) { 
+#       cat(paste0( region,   "\n"))
+#
+#       # region <- "The Americas"   
+#       countries <- iati::dataActivity |>
+#         dplyr::filter( unhcr_region ==  region) |>
+#         dplyr::select(ctr_name) |>
+#         dplyr::distinct() |>
+#         dplyr::pull() 
+#       
+#       for ( ctr in countries) {
+#         cat(paste0("Generating for ", ctr, "\n"))
+#         iati::template_prez(year = 2025,
+#                             ctr_name = ctr,
+#                             folder =  thisfolder)  
+#         }
+#     }
+```
+  
+```{r tests-template_prez}
+test_that("template_prez works", {
+  expect_true(inherits(template_prez, "function")) 
+})
+```
+
+## template_compare
+    
+```{r function-template_compare}
+
+# usethis::use_rmarkdown_template(
+#   template_name = "iati_compare",
+#   template_dir = NULL,
+#   template_description = "Compare",
+#   template_create_dir = TRUE
+# )
+
+
+#' Generate a summary powerpoint
+#' 
+#' @param year A numeric value or a vector of numeric value to filter on year. Note that data pre-2022 are using a different set of indicators
+#' @param ctr_name A character vector corresponding to the name of the country.
+#' @param folder folder within your project where to put the generated report. 
+#'              Folder will be created if it does not exist
+#' 
+#' @importFrom unhcrdown pptx_slides
+#' @importFrom dplyr filter select pull
+#' @importFrom rmarkdown render
+#' @importFrom here here
+#' @importFrom countrycode countrycode
+#' @importFrom stringr str_replace_all
+#' 
+#' @return nothing the file for the report is generated
+#' 
+#' @export 
+#'
+template_compare <- function(year = 2025,
+                          folder = "Compare") {
+  
+  ## Create the outfolder if it does not exist
+  output_dir <- paste0(getwd(),"/",folder)
+  if (!dir.exists(output_dir)) {dir.create(output_dir)}
+  
+  rmarkdown::render(
+    system.file("rmarkdown/templates/iati_compare/skeleton/skeleton.Rmd", package = "iati"),
+    output_file = here::here(folder, paste0('Result_Resource',
+                                            '-', year, '.pptx') ),
+    params = list(year = year)  )
+}
+```
+  
+```{r example-template_compare} 
+# iati::template_compare(year = 2025, folder = "dev/Result")
+```
+  
+```{r tests-template_compare}
+test_that("template_compare works", {
+  expect_true(inherits(template_compare, "function")) 
+})
+```
+    
+
+
+```{r development-inflate, eval=FALSE}
+# Inflate the package
+
+# You're one inflate from paper to box.
+# Build your package from this very Rmd using `fusen::inflate()`
+# 
+# - Verify your `"DESCRIPTION"` file has been updated
+# - Verify your function is in `"R/"` directory
+# - Verify your test is in `"tests/testthat/"` directory
+# - Verify this Rmd appears in `"vignettes/"` directory
+
+# Keep eval=FALSE to avoid infinite loop in case you hit the knit button
+# Execute in the console directly
+fusen::inflate(flat_file = "dev/dev_template.Rmd", clean= TRUE, vignette_name = "UNHCR Programme")
+```
+
+
+

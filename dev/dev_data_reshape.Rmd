@@ -1,0 +1,566 @@
+---
+title: "Data Reshape"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r development, include=FALSE}
+library(testthat)
+```
+
+```{r development-load}
+# Load already included functions if relevant
+pkgload::load_all(export_all = FALSE)
+```
+
+# Logging Helper
+
+```{r function-log_debug}
+#' Log a debug message
+#' @description A simple logger that prepends a timestamp and [DEBUG] prefix.
+#' @param ... The message parts to be passed to `message()`.
+#' @param verbose A boolean to control if the message is printed.
+#' @noRd
+log_debug <- function(..., verbose = TRUE) {
+  if (verbose) {
+    message(Sys.time(), " [DEBUG] ", ...)
+  }
+}
+```
+
+# XML extraction Helpers
+
+```{r function-get_xml_value}
+#' Safely get a value from an XML node
+#' @noRd
+get_xml_value <- function(node, xpath, attr = NULL, pos = 1L) {
+  if (!inherits(node, "xml_node")) {
+    return(NA_character_)
+  }
+  found_nodes <- xml2::xml_find_all(node, xpath)
+  if (length(found_nodes) < pos) {
+    return(NA_character_)
+  }
+  target_node <- found_nodes[[pos]]
+  if (!is.null(attr)) {
+    value <- xml2::xml_attr(target_node, attr)
+  } else {
+    value <- xml2::xml_text(target_node)
+  }
+  if (is.na(value) || value == "") {
+    return(NA_character_)
+  }
+  value
+}
+```
+
+# Content Extraction Functions
+ 
+```{r function-iati_transaction}
+#' @noRd
+iati_transaction <- function(xml_iati, verbose = TRUE) {
+  log_debug("Extracting transactions...", verbose = verbose)
+  transaction_nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/transaction')
+  log_debug("Found ", length(transaction_nodes), " transaction nodes.", verbose = verbose)
+  df <- purrr::map_dfr(transaction_nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      transaction_ref = get_xml_value(node, ".", attr = "ref"),
+      transaction_humanitarian = get_xml_value(node, ".", attr = "humanitarian"),
+      transaction_type_code = get_xml_value(node, "transaction-type", attr = "code"),
+      transaction_date = get_xml_value(node, "transaction-date", attr = "iso-date"),
+      transaction_value_currency = get_xml_value(node, "value", attr = "currency"),
+      transaction_value_date = get_xml_value(node, "value", attr = "value-date"),
+      transaction_value = get_xml_value(node, "value"),
+      transaction_value_USD = get_xml_value(node, "unhcr:value-USD"),
+      transaction_description = get_xml_value(node, "description/narrative"),
+      transaction_provider_org_type = get_xml_value(node, "provider-org", attr = "type"),
+      transaction_provider_org_ref = get_xml_value(node, "provider-org", attr = "ref"),
+      transaction_provider_org = get_xml_value(node, "provider-org/narrative"),
+      transaction_aid_type_code_1 = get_xml_value(node, "aid-type", attr = "code", pos = 1),
+      transaction_aid_type_vocabulary_1 = get_xml_value(node, "aid-type", attr = "vocabulary", pos = 1),
+      transaction_aid_type_code_2 = get_xml_value(node, "aid-type", attr = "code", pos = 2),
+      transaction_aid_type_vocabulary_2 = get_xml_value(node, "aid-type", attr = "vocabulary", pos = 2)
+    )
+  })
+  log_debug("Finished extracting transactions. Rows: ", nrow(df), verbose = verbose)
+  return(df)
+}
+```
+
+```{r function-iati_sector}
+#' @noRd
+iati_sector <- function(xml_iati, verbose = TRUE) {
+  log_debug("Extracting sectors...", verbose = verbose)
+  sector_nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/sector')
+  log_debug("Found ", length(sector_nodes), " sector nodes.", verbose = verbose)
+  df <- purrr::map_dfr(sector_nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      sector_vocabulary = get_xml_value(node, ".", attr = "vocabulary"),
+      sector_vocabulary_uri = get_xml_value(node, ".", attr = "vocabulary-uri"),
+      sector_code = get_xml_value(node, ".", attr = "code"),
+      sector_pct = get_xml_value(node, ".", attr = "percentage"),
+      sector_desc = get_xml_value(node, "narrative")
+    )
+  })
+  log_debug("Finished extracting sectors. Rows: ", nrow(df), verbose = verbose)
+  return(df)
+}
+```
+
+```{r function-iati_policy_marker}
+#' @noRd
+iati_policy_marker <- function(xml_iati, verbose = TRUE) {
+  log_debug("Extracting policy markers...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/policy-marker')
+  log_debug("Found ", length(nodes), " policy marker nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      policy_marker_vocabulary = get_xml_value(node, ".", attr = "vocabulary"),
+      policy_marker_code = get_xml_value(node, ".", attr = "code"),
+      policy_marker_significance = get_xml_value(node, ".", attr = "significance"),
+      policy_marker_uri = get_xml_value(node, ".", attr = "policy-marker-uri"),
+      policy_marker_desc = get_xml_value(node, "narrative")
+    )
+  })
+  log_debug("Finished extracting policy markers. Rows: ", nrow(df), verbose = verbose)
+  return(df)
+}
+```
+
+```{r function-iati_tag}
+#' @noRd
+iati_tag <- function(xml_iati, verbose = TRUE) {
+  log_debug("Extracting tags...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/tag')
+  log_debug("Found ", length(nodes), " tag nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      tag_vocabulary = get_xml_value(node, ".", attr = "vocabulary"),
+      tag_code = get_xml_value(node, ".", attr = "code"),
+      tag_desc = get_xml_value(node, "narrative")
+    )
+  })
+  log_debug("Finished extracting tags. Rows: ", nrow(df), verbose = verbose)
+  return(df)
+}
+```
+## iati_result
+    
+```{r function-iati_result}
+iati_result <- function(xml_iati, verbose = TRUE) {
+  log_debug("Extracting results...", verbose = verbose)
+  indicator_nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/result/indicator')
+  log_debug("Found ", length(indicator_nodes), " result indicator nodes.", verbose = verbose)
+  df <- purrr::map_dfr(indicator_nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      result_type = get_xml_value(node, "ancestor::result", attr = "type"),
+      result_aggregation_status = get_xml_value(node, "ancestor::result", attr = "aggregation-status"),
+      result_title = get_xml_value(node, "ancestor::result/title/narrative"),
+      result_desc = get_xml_value(node, "ancestor::result/description/narrative"),
+      
+      result_indicator_title = get_xml_value(node, "title/narrative"),
+      result_indicator_measure = get_xml_value(node, ".", "measure"),
+      result_indicator_aggregation_status = get_xml_value(node, ".", "aggregation-status"),
+      result_indicator_ascending = get_xml_value(node, ".", "ascending"),
+      
+      result_indicator_reference_code = get_xml_value(node, "reference", "code"),
+      result_indicator_reference_uri = get_xml_value(node, "reference", "indicator-uri"),
+      result_indicator_reference_vocabulary = get_xml_value(node, "reference", "vocabulary"),
+      
+      result_indicator_baseline_value = get_xml_value(node, "baseline", "value"),
+      result_indicator_baseline_year = get_xml_value(node, "baseline", "year"),
+      result_indicator_baseline_location_ref = get_xml_value(node, "baseline/location", "ref"),
+      result_indicator_baseline_dimension_1 = get_xml_value(node, "baseline/dimension", "name", pos = 1),
+      result_indicator_baseline_dimension_value_1 = get_xml_value(node, "baseline/dimension", "value", pos = 1),
+      result_indicator_baseline_dimension_2 = get_xml_value(node, "baseline/dimension", "name", pos = 2),
+      result_indicator_baseline_dimension_value_2 = get_xml_value(node, "baseline/dimension", "value", pos = 2),
+
+      result_indicator_period_start = get_xml_value(node, "period/period-start", "iso-date"),
+      result_indicator_period_end = get_xml_value(node, "period/period-end", "iso-date"),
+      
+      result_indicator_target_value = get_xml_value(node, "period/target", "value"),
+      result_indicator_target_location_ref = get_xml_value(node, "period/target/location", "ref"),
+      result_indicator_target_dimension_1 = get_xml_value(node, "period/target/dimension", "name", pos = 1),
+      result_indicator_target_value_1 = get_xml_value(node, "period/target/dimension", "value", pos = 1),
+      result_indicator_target_dimension_2 = get_xml_value(node, "period/target/dimension", "name", pos = 2),
+      result_indicator_target_value_2 = get_xml_value(node, "period/target/dimension", "value", pos = 2),
+      
+      result_indicator_actual_value = get_xml_value(node, "period/actual", "value"),
+      result_indicator_actual_location_ref = get_xml_value(node, "period/actual/location", "ref"),
+      result_indicator_actual_dimension_1 = get_xml_value(node, "period/actual/dimension", "name", pos = 1),
+      result_indicator_actual_value_1 = get_xml_value(node, "period/actual/dimension", "value", pos = 1),
+      result_indicator_actual_dimension_2 = get_xml_value(node, "period/actual/dimension", "name", pos = 2),
+      result_indicator_actual_value_2 = get_xml_value(node, "period/actual/dimension", "value", pos = 2)
+    )
+  })
+  log_debug("Finished extracting results. Rows: ", nrow(df), verbose = verbose)
+  return(df)
+}
+```
+
+## iati_related_activity
+    
+```{r function-iati_related_activity}
+#' @noRd
+iati_related_activity <- function(xml_iati, verbose = TRUE) {
+    log_debug("Extracting related activities...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/related-activity')
+    log_debug("Found ", length(nodes), " related activity nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      related_activity_ref = get_xml_value(node, ".", attr = "ref"),
+      related_activity_type = get_xml_value(node, ".", attr = "type")
+    )
+  })
+  log_debug("Finished extracting related activities. Rows: ", nrow(df), verbose = verbose)
+  return(df)
+}
+```
+
+## iati_participating_org
+    
+```{r function-iati_participating_org}
+#' @noRd
+iati_participating_org <- function(xml_iati, verbose = TRUE) {
+    log_debug("Extracting participating organizations...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/participating-org')
+    log_debug("Found ", length(nodes), " participating organization nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      participating_org_eng = get_xml_value(node, "narrative"),
+      participating_org_ref = get_xml_value(node, ".", attr = "ref"),
+      participating_org_type = get_xml_value(node, ".", attr = "type"),
+      participating_org_role = get_xml_value(node, ".", attr = "role"),
+      participating_org_activity_id = get_xml_value(node, ".", attr = "activity-id"), 
+      participating_org_crs_channel_code = get_xml_value(node, ".", attr = "crs-channel-code")
+    )
+  })
+    log_debug("Finished extracting participating organizations. Rows: ", nrow(df), verbose = verbose)
+    return(df)
+}
+```
+
+## iati_location
+    
+```{r function-iati_location}
+#' @noRd
+iati_location <- function(xml_iati, verbose = TRUE) {
+    log_debug("Extracting locations...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/location')
+    log_debug("Found ", length(nodes), " location nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    point_text <- get_xml_value(node, "point/pos")
+    lat <- if (!is.na(point_text)) strsplit(point_text, " ")[[1]][1] else NA_character_
+    long <- if (!is.na(point_text)) strsplit(point_text, " ")[[1]][2] else NA_character_
+    
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      location_ref = get_xml_value(node, ".", attr = "ref"),
+      location_reach_code = get_xml_value(node, "location-reach", attr = "code"),
+      location_id_vocabulary = get_xml_value(node, "location-id", attr = "vocabulary"),
+      location_id_code = get_xml_value(node, "location-id", attr = "code"),
+      location_name = get_xml_value(node, "name/narrative"),
+      location_activity_descr = get_xml_value(node, "activity-description/narrative"),
+      location_adm_vocabulary = get_xml_value(node, "administrative", attr = "vocabulary"),
+      location_adm_level = get_xml_value(node, "administrative", attr = "level"),
+      location_adm_code = get_xml_value(node, "administrative", attr = "code"),
+      location_lat = lat,
+      location_long = long,
+      location_exactness_code = get_xml_value(node, "exactness", attr = "code"),
+      location_class_code = get_xml_value(node, "location-class", attr = "code"),
+      location_feature_designation_code = get_xml_value(node, "feature-designation", attr = "code")
+    )
+  })
+    log_debug("Finished extracting locations. Rows: ", nrow(df), verbose = verbose)
+    return(df)
+}
+```
+
+## iati_humanitarian_scope
+    
+```{r function-iati_humanitarian_scope}
+#' @noRd
+iati_humanitarian_scope <- function(xml_iati, verbose = TRUE) {
+    log_debug("Extracting humanitarian scopes...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/humanitarian-scope')
+    log_debug("Found ", length(nodes), " humanitarian scope nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      humanitarian_scope_type = get_xml_value(node, ".", attr = "type"),
+      humanitarian_scope_vocabulary = get_xml_value(node, ".", attr = "vocabulary"),
+      humanitarian_scope_vocabulary_uri = get_xml_value(node, ".", attr = "vocabulary-uri"),
+      humanitarian_scope_code = get_xml_value(node, ".", attr = "code"),
+      humanitarian_scope_desc_eng = get_xml_value(node, "narrative[not(@xml:lang) or @xml:lang='en']"),
+      humanitarian_scope_desc_fr = get_xml_value(node, "narrative[@xml:lang='fr']")
+    )
+  })
+    log_debug("Finished extracting humanitarian scopes. Rows: ", nrow(df), verbose = verbose)
+    return(df)
+}
+```
+
+## iati_document_link
+    
+```{r function-iati_document_link}
+#' @noRd
+iati_document_link <- function(xml_iati, verbose = TRUE) {
+    log_debug("Extracting document links...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/document-link')
+    log_debug("Found ", length(nodes), " document link nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      document_url = get_xml_value(node, ".", attr = "url"),
+      document_format = get_xml_value(node, ".", attr = "format"),
+      document_title =  get_xml_value(node, "title/narrative"),
+      document_category_code = get_xml_value(node, "category", attr = "code"),
+      document_language_code = get_xml_value(node, "language", attr = "code"),
+      document_date = get_xml_value(node, "document-date", attr = "iso-date")
+    )
+  })
+    log_debug("Finished extracting document links. Rows: ", nrow(df), verbose = verbose)
+    return(df)
+}
+```
+  
+## iati_default_aid_type
+    
+```{r function-iati_default_aid_type}
+#' @noRd
+iati_default_aid_type <- function(xml_iati, verbose = TRUE) {
+    log_debug("Extracting default aid types...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/default-aid-type')
+    log_debug("Found ", length(nodes), " default aid type nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      default_aid_type_code = get_xml_value(node, ".", attr = "code"),
+      default_aid_type_vocabulary = get_xml_value(node, ".", attr = "vocabulary")
+    )
+  })
+    log_debug("Finished extracting default aid types. Rows: ", nrow(df), verbose = verbose)
+    return(df)
+}
+```
+
+## iati_budget
+    
+```{r function-iati_budget}
+#' @noRd
+iati_budget <- function(xml_iati, verbose = TRUE) {
+    log_debug("Extracting budgets...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity/budget')
+    log_debug("Found ", length(nodes), " budget nodes.", verbose = verbose)
+  df <- furrr::future_map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "ancestor::iati-activity/iati-identifier"),
+      budget_type = get_xml_value(node, ".", attr = "type"),
+      budget_status = get_xml_value(node, ".", attr = "status"),
+      budget_period_start = get_xml_value(node, "period-start", attr = "iso-date"),
+      budget_period_end = get_xml_value(node, "period-end", attr = "iso-date"),
+      budget_currency = get_xml_value(node, "value", attr = "currency"),
+      budget_value_date = get_xml_value(node, "value", attr = "value-date"),
+      budget_value = get_xml_value(node, "value")
+    )
+  }, .progress = TRUE)
+    log_debug("Finished extracting budgets. Rows: ", nrow(df), verbose = verbose)
+    return(df)
+}
+```
+
+## iati_activity
+    
+```{r function-iati_activity}
+#' @noRd
+iati_activity <- function(xml_iati, verbose = TRUE) {
+    log_debug("Extracting activities...", verbose = verbose)
+  nodes <- xml2::xml_find_all(xml_iati, './/iati-activity')
+    log_debug("Found ", length(nodes), " activity nodes.", verbose = verbose)
+  df <- purrr::map_dfr(nodes, function(node) {
+    tibble::tibble(
+      iati_identifier = get_xml_value(node, "iati-identifier"),
+      reporting_org = get_xml_value(node, "reporting-org/narrative"),
+      reporting_org_ref = get_xml_value(node, "reporting-org", attr = "ref"),
+      reporting_org_type = get_xml_value(node, "reporting-org", attr = "type"),
+      reporting_org_secondary_reporter = get_xml_value(node, "reporting-org", attr = "secondary-reporter"),
+      
+      title_eng = get_xml_value(node, "title/narrative[not(@xml:lang) or @xml:lang='en']"),
+      title_fr = get_xml_value(node, "title/narrative[@xml:lang='fr']"),
+      
+      description_type_1 = get_xml_value(node, "description", attr = "type", pos = 1),
+      description_eng_1 = get_xml_value(xml2::xml_find_all(node, "description")[[1]], "narrative[not(@xml:lang) or @xml:lang='en']"),
+      description_fr_1 = get_xml_value(xml2::xml_find_all(node, "description")[[1]], "narrative[@xml:lang='fr']"),
+      
+      description_type_2 = get_xml_value(node, "description", attr = "type", pos = 2),
+      description_eng_2 = get_xml_value(xml2::xml_find_all(node, "description")[[2]], "narrative[not(@xml:lang) or @xml:lang='en']"),
+      description_fr_2 = get_xml_value(xml2::xml_find_all(node, "description")[[2]], "narrative[@xml:lang='fr']"),
+      
+      activity_status_code = get_xml_value(node, "activity-status", attr = "code"),
+      
+      activity_date_1 = get_xml_value(node, "activity-date", attr = "iso-date", pos = 1),
+      activity_date_type_1 = get_xml_value(node, "activity-date", attr = "type", pos = 1),
+      activity_date_2 = get_xml_value(node, "activity-date", attr = "iso-date", pos = 2),
+      activity_date_type_2 = get_xml_value(node, "activity-date", attr = "type", pos = 2),
+      activity_date_3 = get_xml_value(node, "activity-date", attr = "iso-date", pos = 3),
+      activity_date_type_3 = get_xml_value(node, "activity-date", attr = "type", pos = 3),
+      activity_date_4 = get_xml_value(node, "activity-date", attr = "iso-date", pos = 4),
+      activity_date_type_4 = get_xml_value(node, "activity-date", attr = "type", pos = 4),
+      
+      contact_info_type = get_xml_value(node, "contact-info", attr = "type"),
+      contact_info_org = get_xml_value(node, "contact-info/organisation/narrative"),
+      contact_info_email = get_xml_value(node, "contact-info/email"),
+      contact_info_website = get_xml_value(node, "contact-info/website"),
+      
+      activity_scope_code = get_xml_value(node, "activity-scope", attr = "code"),
+      
+      recipient_country_code = get_xml_value(node, "recipient-country", attr = "code"),
+      recipient_country_pct = get_xml_value(node, "recipient-country", attr = "percentage"),
+      recipient_country = get_xml_value(node, "recipient-country/narrative"),
+      
+      recipient_region_code = get_xml_value(node, "recipient-region", attr = "code"),
+      recipient_region_vocabulary = get_xml_value(node, "recipient-region", attr = "vocabulary"),
+      recipient_region = get_xml_value(node, "recipient-region/narrative"),
+      
+      collaboration_type_code = get_xml_value(node, "collaboration-type", attr = "code"),
+      default_flow_type_code = get_xml_value(node, "default-flow-type", attr = "code"),
+      default_finance_type_code = get_xml_value(node, "default-finance-type", attr = "code"),
+      default_tied_status_code = get_xml_value(node, "default-tied-status", attr = "code"),
+      capital_spend = get_xml_value(node, "capital-spend", attr = "percentage")
+    )
+  })
+    log_debug("Finished extracting activities. Rows: ", nrow(df), verbose = verbose)
+    return(df)
+}
+```
+
+# Main Reshape orchestrator
+
+This section contains the main user-facing function `iati_reshape_all`.
+
+```{r function-iati_reshape_all}
+#' Reshape IATI data and write to files
+#'
+#' @param iati_file_url The URL of the IATI XML file.
+#' @param folder_name The destination folder for the output Excel files. 
+#' @param verbose Whether to show detailed logging messages.
+#'
+#' @export
+iati_reshape_all <- function(iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2026.xml', 
+                             folder_name = "data-raw",
+                             verbose = TRUE) {
+  
+  t1 <- Sys.time()
+  log_debug("Starting IATI data reshape for: ", iati_file_url, verbose = verbose)
+
+  data_list <- iati_reshape(iati_file_url, verbose = verbose)
+  
+  write_iati_data(data_list, folder_name, verbose = verbose)
+  
+  t2 <- Sys.time()
+  log_debug("Finished in ", round(t2 - t1, 2), " seconds.", verbose = verbose)
+  
+  invisible(data_list)
+}
+
+#' @noRd
+iati_reshape <- function(iati_file_url, verbose = TRUE) {
+  log_debug("Downloading file...", verbose = verbose)
+  iati_file <- fs::file_temp()
+  tryCatch({
+    utils::download.file(iati_file_url, iati_file, quiet = !verbose)
+  }, error = function(e) {
+    stop("Failed to download file: ", iati_file_url)
+  })
+  log_debug("Download complete. File at: ", iati_file, verbose = verbose)
+  
+  iati_extractors <- list(
+    activity = iati_activity,
+    budget = iati_budget,
+    default_aid_type = iati_default_aid_type,
+    document_link = iati_document_link,
+    humanitarian_scope = iati_humanitarian_scope,
+    location = iati_location,
+    participating_org = iati_participating_org,
+    related_activity = iati_related_activity,
+    result = iati_result,
+    sector = iati_sector,
+    transaction = iati_transaction,
+    policy_marker = iati_policy_marker,
+    tag = iati_tag
+  )
+  
+  log_debug("Starting parallel extraction...", verbose = verbose)
+  future::plan(future::multisession)
+  
+  all_data <- furrr::future_map(
+    iati_extractors,
+    ~ {
+      xml_iati <- xml2::read_xml(iati_file)
+      .x(xml_iati, verbose = verbose)
+    },
+    .progress = TRUE,
+    .options = furrr::furrr_options(seed = TRUE)
+  )
+  log_debug("Parallel extraction finished.", verbose = verbose)
+  
+  return(all_data)
+}
+
+#' @noRd
+write_iati_data <- function(data_list, folder_name, verbose = TRUE) {
+  log_debug("Writing data to folder: ", folder_name, verbose = verbose)
+  fs::dir_create(folder_name)
+  purrr::iwalk(data_list, ~ {
+    file_path <- file.path(folder_name, paste0("iati_", .y, ".xlsx"))
+    log_debug("Writing ", .y, " data to ", file_path, verbose = verbose)
+    writexl::write_xlsx(.x, file_path)
+  })
+  log_debug("Finished writing all files.", verbose = verbose)
+}
+```
+
+  
+```{r example-iati_reshape_all}
+#iati_reshape_all(
+# iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2022.xml' , 
+# folder_name = "data-raw/unhcr_2022")
+
+# iati_reshape_all(
+# iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2023.xml' ,
+# folder_name = "data-raw/unhcr_2023")
+
+# iati_reshape_all( 
+# iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2024.xml',
+# folder_name = "data-raw/unhcr_2024")
+
+# iati_reshape_all( 
+# iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2025.xml',
+# folder_name = "data-raw/unhcr_2025")
+
+# iati_reshape_all( 
+# iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2026.xml',
+# folder_name = "data-raw/unhcr_2026")
+
+
+```
+  
+```{r tests-iati_reshape_all}
+test_that("iati_reshape_all works", {
+  expect_true(inherits(iati_reshape_all, "function")) 
+})
+```
+    
+```{r development-inflate, eval=FALSE}
+# Run but keep eval=FALSE to avoid infinite loop
+# Execute in the console directly
+fusen::inflate(flat_file = "dev/dev_data_reshape.Rmd", clean = TRUE, vignette_name = "Data Reshape")
+```

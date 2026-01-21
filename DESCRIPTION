@@ -1,11 +1,14 @@
 Type: Package
 Package: iati
 Title: UNHCR IATI Data Crunching
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: c(
     person("Edouard", "Legoupil", , "legoupil@unhcr.org", role = c("aut", "cre")),
     person("Matheus", "Soldi Hardt", , "matheus@unhcr.org", role = "aut"),
-    person("Hisham", "Galal", , "galalh@unhcr.org", role = "aut")
+    person("Hisham", "Galal", , "galalh@unhcr.org", role = "aut"),
+    person("UNHCR",
+                    role = "cph",
+                    email = "iati@unhcr.org")
   )
 Maintainer: Edouard Legoupil <legoupil@unhcr.org>
 Description: This package includes UNHCR IATI data organised in tabular
@@ -18,6 +21,9 @@ Imports:
     cowplot,
     dplyr,
     forcats,
+    fs,
+    furrr,
+    future,
     ggplot2,
     ggrepel,
     ggsankey,
@@ -30,6 +36,7 @@ Imports:
     patchwork,
     purrr,
     refugees,
+    rlang,
     rmarkdown,
     scales,
     showtext,
@@ -37,19 +44,24 @@ Imports:
     stringr,
     sysfonts,
     systemfonts,
+    tibble,
     tidyr,
     tidyselect,
     unhcrdown,
-    unhcrthemes
+    unhcrthemes,
+    utils,
+    writexl,
+    xml2
 Suggests: 
     janitor,
     testthat
-VignetteBuilder: 
-    knitr
+VignetteBuilder: knitr
 Remotes:
     github::davidsjoberg/ggsankey,
     github::unhcr-dataviz/unhcrdown
-Config/fusen/version: 0.5.2
+Config/fusen/version: 0.7.2
 Encoding: UTF-8
 LazyData: TRUE
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.3
+Depends: 
+    R (>= 3.5)
