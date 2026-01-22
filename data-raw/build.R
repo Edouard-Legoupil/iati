@@ -2,44 +2,57 @@
 #
 # This function pulls data from HDX and then tidy them a bit to be ready for R
 
-# Check that the usethis package is also installed. If not:
-#install.packages("usethis")
-#devtools::document()
-
-#install.packages("pkgdown")
-
-#library("pkgdown")
-#pkgdown::build_site()
-
-
-## a few other exploration of the package
-#devtools::release()
-# devtools::build_win(version = c("R-release", "R-devel"))
-
-#install.packages("sinew")
-#devtools::install_github("mdlincoln/docthis")
-library(tidyverse)
+#library(tidyverse)
 library(readr)
 library(sinew)
-#library(docthis)
- 
+library(here)
+library(readxl)
+library(purrr)
+library(dplyr)
 
 
+read_and_bind <- function(file_name, col_mapping = NULL) {
+  years <- 2022:2026
+  files <- purrr::map(years, ~ here::here("data-raw", paste0("unhcr_", .x), paste0("iati_", file_name, ".xlsx")))
+  
+  existing_files <- purrr::keep(files, file.exists)
+  
+  if (length(existing_files) == 0) {
+    warning(paste("No files found for", file_name))
+    return(tibble::tibble())
+  }
+  
+  purrr::map_dfr(existing_files, function(path) {
+    data <- readxl::read_excel(path, sheet = "Sheet1")
+    
+    # Error catching for column mapping
+    if (!is.null(col_mapping)) {
+      current_cols <- colnames(data)
+      required_cols <- names(col_mapping)
+      
+      # Identify which required keys are missing from this specific file
+      missing_cols <- setdiff(required_cols, current_cols)
+      
+      if (length(missing_cols) > 0) {
+        # Custom error message identifying the file and the missing column
+        stop(paste0(
+          "\nColumn mapping failed for file: ", basename(path),
+          "\nMissing columns: ", paste(missing_cols, collapse = ", "),
+          "\nAvailable columns: ", paste(current_cols, collapse = ", ")
+        ))
+      }
+      
+      # Rename columns based on mapping: rename(new_name = old_name)
+      data <- data %>% dplyr::select(dplyr::all_of(col_mapping))
+    }
+    
+    return(data)
+  })
+}
 ### Build each frame documentation 
 
 ## iati_activity ##########
-activity <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_activity.xlsx"), sheet = "Sheet1"))
-
-#names(activity)
-#str(activity)
+activity <- read_and_bind("activity")
 
 ## Cleaning a bit to match with code.. 
 activity$reporting_org_type  <- as.numeric(activity$reporting_org_type)
@@ -52,7 +65,6 @@ activity$activity_date_type_3 <- as.numeric(activity$activity_date_type_3)
 activity$activity_date_type_4 <- as.numeric(activity$activity_date_type_4)
 
 activity$activity_scope_code <- as.numeric(activity$activity_scope_code)
-#activity$recipient_country_code <- as.numeric(activity$recipient_country_code)
 activity$recipient_region_code <- as.numeric(activity$recipient_region_code)
 activity$collaboration_type_code <- as.numeric(activity$collaboration_type_code)
 activity$recipient_region_vocabulary <- as.numeric(activity$recipient_region_vocabulary)
@@ -72,9 +84,9 @@ activity <- activity |>
   iati_identifier_year_reg_ops = stringr::str_remove(
     string = iati_identifier, 
     pattern = "XM-DAC-41121-"),
-   year = stringr::str_sub(iati_identifier_year_reg_ops, 
+   year = as.numeric(stringr::str_sub(iati_identifier_year_reg_ops, 
                                           start = 1, 
-                                          end = 4),
+                                          end = 4)),
   iati_identifier_reg_ops = stringr::str_sub(iati_identifier_year_reg_ops, 
                                              start = 6),
   is_operation = grepl("-", iati_identifier_reg_ops ),
@@ -159,9 +171,6 @@ activity <- activity |>
                                    collaboration_type_description ) ,
                    by= c("collaboration_type_code" = "code")) 
 
-str(activity)
-#View(activity)
-sinew::makeOxygen(activity, add_fields = "source")
 dataActivity <- activity
 save(dataActivity, file =  "data/dataActivity.RData")
 # Note: significantly better compression could be obtained
@@ -169,23 +178,12 @@ save(dataActivity, file =  "data/dataActivity.RData")
 tools::resaveRdaFiles(here::here("data","dataActivity.RData"),compress="xz")
 
 ## iati_budget ##########
-budget <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_budget.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_budget.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_budget.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_budget.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_budget.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_budget.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_budget.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_budget.xlsx"), sheet = "Sheet1"))
-
-
+budget <- read_and_bind("budget")
 budget$budget_type <- as.numeric(budget$budget_type)
 budget$budget_status <- as.numeric(budget$budget_status)
 budget$budget_value <- as.numeric(budget$budget_value)
 
 budget <- budget |>
-  ## Adding look up table 
   dplyr::left_join(iati::codeBudgetType |> 
                      dplyr::mutate(budget_type_name = name,
                                    budget_type_description = description) |> 
@@ -193,7 +191,6 @@ budget <- budget |>
                                    budget_type_name ,
                                    budget_type_description) ,
                    by= c("budget_type" = "code"))  |>
-  ## Adding look up table 
   dplyr::left_join(iati::codeBudgetStatus |> 
                      dplyr::mutate(budget_status_name = name,
                                    budget_status_description = description) |> 
@@ -202,9 +199,6 @@ budget <- budget |>
                                    budget_status_description) ,
                    by= c("budget_status" = "code")) 
  
-
-names(budget)
-sinew::makeOxygen(budget, add_fields = "source")
 dataBudget <- budget
 save(dataBudget, file =  "data/dataBudget.RData")
 # Note: significantly better compression could be obtained
@@ -212,37 +206,15 @@ save(dataBudget, file =  "data/dataBudget.RData")
 tools::resaveRdaFiles(here::here("data","dataBudget.RData"),compress="xz")
 
 ## iati_default_aid_type ##########
-default_aid_type <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_default_aid_type.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_default_aid_type.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_default_aid_type.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_default_aid_type.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_default_aid_type.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_default_aid_type.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_default_aid_type.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_default_aid_type.xlsx"), sheet = "Sheet1"))
-
-names(default_aid_type)
-sinew::makeOxygen(default_aid_type, add_fields = "source")
+default_aid_type <- read_and_bind("default_aid_type")
 dataDefault_aid_type <- default_aid_type
 save(dataDefault_aid_type, file =  "data/dataDefault_aid_type.RData")
 # Note: significantly better compression could be obtained
 #by using R CMD build --resave-data
-#tools::resaveRdaFiles(here::here("data","dataDefault_aid_type.RData"),compress="bzip2")
+tools::resaveRdaFiles(here::here("data","dataDefault_aid_type.RData"),compress="bzip2")
 
 ## iati_document_link ##########
-document_link <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_document_link.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_document_link.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_document_link.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_document_link.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_document_link.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_document_link.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_document_link.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_document_link.xlsx"), sheet = "Sheet1"))
-
-names(document_link)
-sinew::makeOxygen(document_link, add_fields = "source")
+document_link <- read_and_bind("document_link")
 dataDocument_link <- document_link
 save(dataDocument_link, file =  "data/dataDocument_link.RData")
 # Note: significantly better compression could be obtained
@@ -250,18 +222,7 @@ save(dataDocument_link, file =  "data/dataDocument_link.RData")
 tools::resaveRdaFiles(here::here("data","dataDocument_link.RData"),compress="bzip2")
 
 ## iati_humanitarian_scope ##########
-humanitarian_scope <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_humanitarian_scope.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_humanitarian_scope.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_humanitarian_scope.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_humanitarian_scope.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_humanitarian_scope.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_humanitarian_scope.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_humanitarian_scope.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_humanitarian_scope.xlsx"), sheet = "Sheet1"))
-
-names(humanitarian_scope)
-sinew::makeOxygen(humanitarian_scope, add_fields = "source")
+humanitarian_scope <- read_and_bind("humanitarian_scope")
 dataHumanitarian_scope <- humanitarian_scope
 save(dataHumanitarian_scope, file =  "data/dataHumanitarian_scope.RData")
 # Note: significantly better compression could be obtained
@@ -269,18 +230,7 @@ save(dataHumanitarian_scope, file =  "data/dataHumanitarian_scope.RData")
 tools::resaveRdaFiles(here::here("data","dataHumanitarian_scope.RData"),compress="bzip2")
 
 ## iati_location ##########
-location <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_location.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_location.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_location.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_location.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_location.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_location.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_location.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_location.xlsx"), sheet = "Sheet1"))
-
-names(location)
-sinew::makeOxygen(location, add_fields = "source")
+location <- read_and_bind("location")
 dataLocation <- location
 save(dataLocation, file =  "data/dataLocation.RData")
 # Note: significantly better compression could be obtained
@@ -288,25 +238,10 @@ save(dataLocation, file =  "data/dataLocation.RData")
 tools::resaveRdaFiles(here::here("data","dataLocation.RData"),compress="xz")
 
 ## iati_participating_org ##########
-participating_org <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_participating_org.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_participating_org.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_participating_org.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_participating_org.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_participating_org.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_participating_org.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_participating_org.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_participating_org.xlsx"), sheet = "Sheet1"))
-
-names(participating_org)
-str(participating_org)
-
+participating_org <- read_and_bind("participating_org")
 participating_org$participating_org_type <- as.numeric(participating_org$participating_org_type )
 participating_org$participating_org_role  <- as.numeric(participating_org$participating_org_role )
-
-
 participating_org <- participating_org |>
-  ## Adding look up table 
   dplyr::left_join(iati::codeOrganisationType |> 
                      dplyr::mutate(participating_org_type_name = name,
                                    participating_org_type_description = description) |> 
@@ -314,7 +249,6 @@ participating_org <- participating_org |>
                                    participating_org_type_name ,
                                    participating_org_type_description) ,
                    by= c("participating_org_type" = "code")) |>
-  ## Adding look up table 
   dplyr::left_join(iati::codeOrganisationRole |> 
                      dplyr::mutate(participating_org_role_name = name,
                                    participating_org_role_description = description) |> 
@@ -322,8 +256,6 @@ participating_org <- participating_org |>
                                    participating_org_role_name ,
                                    participating_org_role_description) ,
                    by= c("participating_org_role" = "code")) 
-
-sinew::makeOxygen(participating_org, add_fields = "source")
 dataParticipating_org <- participating_org
 save(dataParticipating_org, file =  "data/dataParticipating_org.RData")
 # Note: significantly better compression could be obtained
@@ -331,18 +263,7 @@ save(dataParticipating_org, file =  "data/dataParticipating_org.RData")
 tools::resaveRdaFiles(here::here("data","dataParticipating_org.RData"),compress="bzip2")
 
 ## iati_related_activity ##########
-related_activity <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_related_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_related_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_related_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_related_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_related_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_related_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_related_activity.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_related_activity.xlsx"), sheet = "Sheet1"))
-
-names(related_activity)
-sinew::makeOxygen(related_activity, add_fields = "source")
+related_activity <- read_and_bind("related_activity")
 dataRelated_activity <- related_activity
 save(dataRelated_activity, file =  "data/dataRelated_activity.RData")
 # Note: significantly better compression could be obtained
@@ -350,22 +271,11 @@ save(dataRelated_activity, file =  "data/dataRelated_activity.RData")
 tools::resaveRdaFiles(here::here("data","dataRelated_activity.RData"),compress="bzip2")
 
 ## iati_result ##########
-result <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_result.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_result.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_result.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_result.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_result.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_result.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_result.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_result.xlsx"), sheet = "Sheet1"))
-
-
+result <- read_and_bind("result")
 result$result_type <- as.numeric(result$result_type )
 result$result_indicator_measure <- as.numeric(result$result_indicator_measure)
 
 result <- result |>
-  ## Adding look up table 
   dplyr::left_join(iati::codeResultType |> 
                      dplyr::mutate(result_type_name = name,
                                    result_type_description = description) |> 
@@ -373,7 +283,6 @@ result <- result |>
                                    result_type_name ,
                                    result_type_description) ,
                    by= c("result_type" = "code")) |>
-  ## Adding look up table 
   dplyr::left_join(iati::codeIndicatorMeasure |> 
                      dplyr::mutate(indicator_measure_name = name,
                                    indicator_measure_description = description) |> 
@@ -381,9 +290,6 @@ result <- result |>
                                    indicator_measure_name ,
                                    indicator_measure_description) ,
                    by= c("result_indicator_measure" = "code")) 
-
-names(result)
-sinew::makeOxygen(result, add_fields = "source")
 dataResult <- result
 save(dataResult, file =  "data/dataResult.RData")
 
@@ -391,22 +297,10 @@ save(dataResult, file =  "data/dataResult.RData")
 #by using R CMD build --resave-data
 tools::resaveRdaFiles(here::here("data","dataResult.RData"),compress="bzip2")
 
-
 ## iati_sector ##########
-sector <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_sector.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_sector.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_sector.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_sector.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_sector.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_sector.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_sector.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_sector.xlsx"), sheet = "Sheet1"))
-
+sector <- read_and_bind("sector")
 sector$sector_vocabulary <- as.numeric(sector$sector_vocabulary)
-
 sector <- sector |>
-  ## Adding look up table 
   dplyr::left_join(iati::codeSectorVocabulary |> 
                      dplyr::mutate(sector_vocabulary_name = name,
                                    sector_vocabulary_description = description) |> 
@@ -414,47 +308,30 @@ sector <- sector |>
                                    sector_vocabulary_name ,
                                    sector_vocabulary_description) ,
                    by= c("sector_vocabulary" = "code"))
-
-
-names(sector)
-sinew::makeOxygen(sector, add_fields = "source")
 dataSector <- sector
+#usethis::use_data(dataSector, overwrite = TRUE)
 save(dataSector, file =  "data/dataSector.RData")
 # Note: significantly better compression could be obtained
 #by using R CMD build --resave-data
 tools::resaveRdaFiles(here::here("data","dataSector.RData"),compress="bzip2")
 
 ## iati_transaction ##########
-transaction <- rbind( 
-  readxl::read_excel( here::here("data-raw/unhcr_2016", "iati_transaction.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2017", "iati_transaction.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2018", "iati_transaction.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2019", "iati_transaction.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2020", "iati_transaction.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2021", "iati_transaction.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2022", "iati_transaction.xlsx"), sheet = "Sheet1"),
-  readxl::read_excel( here::here("data-raw/unhcr_2023", "iati_transaction.xlsx"), sheet = "Sheet1"))
-
-str(transaction)
-## Cleaning a bit to match with code.. 
+transaction <- read_and_bind("transaction")
 transaction$transaction_provider_org_type  <- as.numeric(transaction$transaction_provider_org_type)
 transaction$transaction_type_code   <- as.numeric(transaction$transaction_type_code )
-levels(as.factor(transaction$transaction_aid_type_vocabulary_1))
-table(transaction$transaction_aid_type_vocabulary_1, useNA = "ifany")
 transaction$transaction_aid_type_vocabulary_1  <- as.numeric(transaction$transaction_aid_type_vocabulary_1)
-levels(as.factor(transaction$transaction_aid_type_vocabulary_2))
-table(transaction$transaction_aid_type_vocabulary_2, useNA = "ifany")
-table(transaction$transaction_aid_type_vocabulary_2, transaction$transaction_aid_type_code_2, useNA = "ifany")
-
 transaction$transaction_aid_type_vocabulary_2  <- as.numeric(transaction$transaction_aid_type_vocabulary_2)
 transaction$transaction_value  <- as.numeric(transaction$transaction_value)
 transaction$transaction_value_USD  <- as.numeric(transaction$transaction_value_USD)
 transaction$transaction_value_date  <- lubridate::as_date(transaction$transaction_value_date)
 transaction$transaction_date  <- lubridate::as_date(transaction$transaction_date)
 
-
+#c <- iati::codeTransactionType 
 transaction <- transaction |>
-  ## Adding look up table 
+  ## fix for transaction_value_USD wich is null for for transactiontype 3 and 4
+  dplyr::mutate(transaction_value_USD = dplyr::if_else(transaction_type_code %in% c("3","4"),
+                                                       transaction_value,
+                                                       transaction_value_USD)) |>
   dplyr::left_join(iati::codeTransactionType |> 
                      dplyr::mutate(transaction_type_name = name,
                                    transaction_type_description = description) |> 
@@ -462,13 +339,11 @@ transaction <- transaction |>
                                    transaction_type_name ,
                                    transaction_type_description) ,
                    by= c("transaction_type_code" = "code"))  |> 
-  ## Adding look up table 
   dplyr::left_join(iati::codeOrganisationType |> 
                      dplyr::mutate(provider_org_type_name = name ,
                                    provider_org_type_description = description) |> 
                      dplyr::select(code, provider_org_type_name, provider_org_type_description) ,
                    by= c("transaction_provider_org_type" = "code")) |> 
-  ## Adding look up table 
   dplyr::left_join(iati::codeAidType |> 
                      dplyr::mutate(aid_type1_name = name,
                                    aid_type1_description = description) |> 
@@ -476,14 +351,12 @@ transaction <- transaction |>
                                    aid_type1_name ,
                                    aid_type1_description) ,
                    by= c("transaction_aid_type_code_1" = "code"))  |> 
-  ## Adding look up table 
   dplyr::left_join(iati::codeEarmarkingCategory |> 
                      dplyr::mutate(code = as.character(code),
                                    earmarking_name = name,
                                    earmarking_description = description) |> 
                      dplyr::select(code, earmarking_name, earmarking_description  ) ,
                    by= c("transaction_aid_type_code_2" = "code" )) |>    
-  ## Adding look up table 
   dplyr::left_join(iati::codeAidTypeVocabulary |> 
                      dplyr::mutate(aid_type_vocabulary1_name = name,
                                    aid_type_vocabulary1_description = description) |> 
@@ -491,7 +364,6 @@ transaction <- transaction |>
                                    aid_type_vocabulary1_name,
                                    aid_type_vocabulary1_description  ) ,
                    by= c("transaction_aid_type_vocabulary_1" = "code"))  |> 
-  ## Adding look up table  
   dplyr::left_join(iati::codeAidTypeVocabulary |> 
                      dplyr::mutate(aid_type_vocabulary2_name = name,
                                    aid_type_vocabulary2_description = description) |> 
@@ -500,10 +372,14 @@ transaction <- transaction |>
                                    aid_type_vocabulary2_description  ) ,
                    by= c("transaction_aid_type_vocabulary_2" = "code"))  
 
-
-names(transaction)
-sinew::makeOxygen(transaction, add_fields = "source")
 dataTransaction <- transaction
+
+## Check
+# c11 <- dataTransaction |> dplyr::filter(transaction_type_code ==  "4")
+# c111 <- dataTransaction |> dplyr::filter(is.na(transaction_value_USD))
+# 
+# c1 <- dataTransaction |> dplyr::filter(transaction_type_name ==  "Expenditure")  
+
 save(dataTransaction, file =  "data/dataTransaction.RData")
 # Note: significantly better compression could be obtained
 #by using R CMD build --resave-data
@@ -744,5 +620,3 @@ tools::resaveRdaFiles(here::here("data","dataTransaction.RData"),compress="xz")
 # load("data/codeTransactionType.RData")
 # codeTransactionType <- TransactionType
 # save(codeTransactionType, file =  "data/codeTransactionType.RData")
- 
-
