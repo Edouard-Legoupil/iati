@@ -8,6 +8,15 @@ editor_options:
 
 
 ```{r developmenttest, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message=FALSE, 
+  warning=FALSE,
+  fig.width = 8,
+  fig.asp = 0.718,
+  out.width = "90%"
+)
 library(testthat) 
 library(ggplot2)
 library(dplyr)
@@ -2357,32 +2366,32 @@ compare_resource_result <- function(year = 2025,
 ```
   
 ```{r example-compare_resource_result, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 12, fig.asp = 0.618, fig.align = "center",  out.width = "90%"}
-# See a list of indicators per area of work
-list_indic <- iati::mapping_indicator |> 
-                 janitor::clean_names() |>
-                 dplyr::filter( results_level =="Outcome") |>
-                 dplyr::left_join(iati::mapping_result |> 
-                                    dplyr::select(sector_rbm, area_id) |>
-                                    dplyr::distinct(), by = c("area_id")) |>
-                 dplyr::select(area_id, sector_rbm, indicator)
-#knitr::kable(list_indic)  
-
-compare_resource_result(year =   2024, 
-                        show_baseline = TRUE,
-                        show_target = TRUE,
-      indicator = "13.2. Proportion of PoC who self-report positive changes in their income compared to previous year.",
-      outcome = "OA8: Well-Being and Basic Needs")
-
-compare_resource_result(year =   2022, 
-       ctr_name = "Costa Rica",
-       indicator = "13.2. Proportion of PoC who self-report positive changes in their income compared to previous year.",
-       outcome = "OA8: Well-Being and Basic Needs")
-
-
-compare_resource_result(year =   2022, 
-       pop_type = "Refugees and Asylum-seekers",
-       indicator = "13.2. Proportion of PoC who self-report positive changes in their income compared to previous year.",
-       outcome = "OA8: Well-Being and Basic Needs")
+# # See a list of indicators per area of work
+# list_indic <- iati::mapping_indicator |> 
+#                  janitor::clean_names() |>
+#                  dplyr::filter( results_level =="Outcome") |>
+#                  dplyr::left_join(iati::mapping_result |> 
+#                                     dplyr::select(sector_rbm, area_id) |>
+#                                     dplyr::distinct(), by = c("area_id")) |>
+#                  dplyr::select(area_id, sector_rbm, indicator)
+# #knitr::kable(list_indic)  
+# 
+# compare_resource_result(year =   2024, 
+#                         show_baseline = TRUE,
+#                         show_target = TRUE,
+#       indicator = "13.2. Proportion of PoC who self-report positive changes in their income compared to previous year.",
+#       outcome = "OA8: Well-Being and Basic Needs")
+# 
+# compare_resource_result(year =   2024, 
+#        ctr_name = "Costa Rica",
+#        indicator = "13.2. Proportion of PoC who self-report positive changes in their income compared to previous year.",
+#        outcome = "OA8: Well-Being and Basic Needs")
+# 
+# 
+# compare_resource_result(year =   2024, 
+#        pop_type = "Refugees and Asylum-seekers",
+#        indicator = "13.2. Proportion of PoC who self-report positive changes in their income compared to previous year.",
+#        outcome = "OA8: Well-Being and Basic Needs")
 ```
   
 ```{r tests-compare_resource_result}
@@ -4066,7 +4075,7 @@ test_that("template_compare works", {
 
 # Keep eval=FALSE to avoid infinite loop in case you hit the knit button
 # Execute in the console directly
-fusen::inflate(flat_file = "dev/dev_unhcr_programme.Rmd", vignette_name = "UNHCR Programme")
+fusen::inflate(flat_file = "dev/dev_unhcr_programme.Rmd", vignette_name = "-- Operation Analysis")
 ```
 
 

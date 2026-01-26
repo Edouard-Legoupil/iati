@@ -1,0 +1,420 @@
+---
+title: "UNHCR Funding Analysis  "
+subtitle: "`r paste('Donor Profile:', params$name)`"
+author: "AI Generated Analysis based on the open data shared publicly by UNHCR as part of the [International Aid Transparency Initiative (IATI)](https://www.unhcr.org/iati-international-aid-transparency-initiative). Beware of data limitations and potential hallucinations! Thanks for reporting any [issues here](https://github.com/Edouard-Legoupil/iati/issues/new) -- [View all Reports](../articles/ai-powered-reports.html)"
+format:
+  html:
+    toc: true
+    code-fold: true
+    self-contained: true
+
+params:
+  name: "Private donors"
+
+  year: null
+  start_year: null
+  end_year: null
+  ctr_name: null
+
+  top_n_countries: 10
+  top_n_interest: 10
+  other_stat: "mean"
+  funding_by: "global"
+  earmarking_by: "region"
+  volatility_time_unit: "quarter"
+  volatility_forecast_h: 8
+  volatility_show_ci: true
+
+  # strict one page tuning
+  fig_width: 5.55
+  fig_height: 1.75
+  dpi: 260
+
+  # typography
+  base_text_size: 23
+  axis_text_size: 18
+  legend_text_size: 18
+  strip_text_size: 21
+  plot_family: "Lato"           # will auto-fallback to sans if not available to R device
+
+  # AI narration
+  use_ai: true
+  ai_provider: "azure"          # azure|auto
+  ai_model: "gpt-4.1-mini"
+  max_tokens_short_desc: 30        # only used as instruction in prompt
+  max_tokens_long_desc: 500
+  ai_max_tokens_exec: 100         # only used as instruction in prompt
+  ai_debug: true
+---
+
+```{r setup, include=FALSE}
+# Set default Quarto options
+knitr::opts_chunk$set(echo = FALSE, fig.cap = TRUE, warning = FALSE, message = FALSE)
+# Load necessary libraries
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+  library(scales)
+  library(lubridate)
+  library(stringr)
+  library(unhcrthemes)
+  library(iati)
+  library(ellmer)
+})
+
+ 
+
+normalize_year <- function(y) if (is.null(y) || length(y) == 0) NULL else as.integer(y)
+normalize_chr  <- function(x) if (is.null(x) || length(x) == 0) NULL else as.character(x)
+
+# -------------------------
+# AI narration (ellmer) 
+# -------------------------
+ai_enabled <- isTRUE(params$use_ai)
+ai_debug   <- isTRUE(params$ai_debug)
+
+ai_log <- character()
+ai_note <- function(x) { ai_log <<- c(ai_log, x) }
+
+# ---- 
+
+p_year  <- normalize_year(params$year)
+p_start <- if (is.null(params$start_year)) NULL else as.integer(params$start_year)
+p_end   <- if (is.null(params$end_year)) NULL else as.integer(params$end_year)
+p_ctr   <- normalize_chr(params$ctr_name)
+
+# Determine a safe font family for ggplot rendering
+plot_family_safe <- params$plot_family
+if (!is.null(plot_family_safe) && plot_family_safe == "Lato") {
+  ok <- FALSE
+  if (requireNamespace("systemfonts", quietly = TRUE)) {
+    mf <- tryCatch(systemfonts::match_font("Lato"), error = function(e) NULL)
+    ok <- !is.null(mf) && !is.null(mf$path) && nzchar(mf$path)
+  }
+  if (!ok) plot_family_safe <- "sans"
+}
+
+placeholder_plot <- function(title = "No data", subtitle = "") {
+  ggplot2::ggplot() +
+    ggplot2::theme_void() +
+    ggplot2::annotate("text", x = 0, y = 0.1, label = title, size = 5, fontface = "bold") +
+    ggplot2::annotate("text", x = 0, y = -0.1, label = subtitle, size = 3.5) +
+    ggplot2::xlim(-1,1) + ggplot2::ylim(-1,1)
+}
+
+safe_plot <- function(expr) {
+  res <- tryCatch(expr, error = function(e) placeholder_plot("Plot unavailable", conditionMessage(e)))
+  if (is.null(res)) placeholder_plot("No data for this view", "Function returned NULL") else res
+}
+
+render_plot <- function(x) {
+  if (inherits(x, "ggplot")) print(x)
+  else if (inherits(x, c("grob", "gtable"))) { grid::grid.newpage(); grid::grid.draw(x) }
+  else print(placeholder_plot("Unsupported plot object", class(x)[1]))
+}
+
+normalize_plot <- function(p) {
+  if (!inherits(p, "ggplot")) return(p)
+  p <- p + ggplot2::labs(title = NULL, subtitle = NULL, caption = NULL)
+  p + ggplot2::theme(
+    text = ggplot2::element_text(size = params$base_text_size, family = plot_family_safe),
+    axis.text = ggplot2::element_text(size = params$axis_text_size, family = plot_family_safe),
+    axis.title = ggplot2::element_text(size = params$axis_text_size, family = plot_family_safe),
+    legend.text = ggplot2::element_text(size = params$legend_text_size, family = plot_family_safe),
+    legend.title = ggplot2::element_text(size = params$legend_text_size, family = plot_family_safe),
+    strip.text = ggplot2::element_text(size = params$strip_text_size, family = plot_family_safe),
+    plot.margin = ggplot2::margin(1, 1, 1, 1, unit = "pt"),
+    legend.position = "bottom",
+    legend.key.height = ggplot2::unit(6, "pt"),
+    legend.key.width  = ggplot2::unit(10, "pt")
+  )
+}
+
+chat =  ellmer::chat_azure_openai(
+  system_prompt = "You are a humanitarian funding analyst.Your task is to build a concise executive summary to describe the profile of a specific donor based on provided information",
+  model = params$ai_model,
+  api_version = Sys.getenv("AZURE_OPENAI_API_VERSION"),
+  endpoint = Sys.getenv("AZURE_OPENAI_ENDPOINT"),
+  api_key = Sys.getenv("AZURE_OPENAI_API_KEY"))
+
+
+
+
+ 
+```
+
+```{r summary}
+#| message: false
+#| warning: false
+#| include: false
+
+# Plots
+donor_ranking_raw <- safe_plot(
+  show_donor_ranking(donor_name = params$name, 
+                     year = if (is.null(p_year)) NULL else max(p_year), 
+                     top_n_display = 10, 
+                     ctr_name = p_ctr, 
+                     verbose = FALSE))
+
+donor_funding_over_time_raw <- safe_plot(
+  show_donor_funding_over_time(donor_name = params$name, 
+                               year = c(2022, 2023, 20234, 2025),
+                               by = "region"))
+
+donor_geographic_diversification_raw <- safe_plot(
+  show_donor_geographic_diversification(
+    donor_name = params$name, 
+    start_year = p_start, 
+    end_year = p_end,
+    other_stat = params$other_stat, 
+    verbose = FALSE))
+
+donor_earmarking_raw <- safe_plot(
+  show_donor_earmarking(
+    donor_name = params$name, 
+    year = p_year,
+    by = params$earmarking_by,
+    ctr_name = p_ctr))
+
+donor_transaction_desc_raw <- safe_plot(
+  show_donor_transaction_desc(donor_name = params$name, 
+                              by_primary = "transaction_description", 
+                              by_secondary = "unhcr_region",
+                              year = p_year, 
+                              ctr_name = p_ctr, 
+                              top_n = params$top_n_interest))
+
+donor_funding_volatility_raw <- safe_plot(
+  show_donor_funding_volatility(donor_name = params$name,
+                                year = p_year, 
+                                ctr_name = p_ctr,
+                                time_unit = params$volatility_time_unit, 
+                                forecast_horizon = params$volatility_forecast_h,
+                                show_forecast_ci = isTRUE(params$volatility_show_ci), 
+                                verbose = FALSE))
+compare_donor_profiles_raw <- safe_plot(            
+    compare_donor_profiles(  donor_names =  params$name,
+                            by = "earmarking",
+                            year =  p_year,
+                            avg_method = "pooled"))
+
+donor_geographic_priority_shift_raw <- safe_plot(    
+  show_donor_geographic_priority_shift(  donor_name =  params$name,
+                                         top_n_countries = 4,
+                                         start_year = 2022,
+                                         end_year = 2025))
+
+              
+
+
+
+stories <- c(
+  "Ranking" = generate_plot_story(donor_ranking_raw, 
+                                  provider = params$ai_provider, model = params$ai_model,
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc ),
+  
+  "Funding" = generate_plot_story(donor_funding_over_time_raw, 
+                                  provider = params$ai_provider, model = params$ai_model,
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc),
+  
+  "Diversification" = generate_plot_story(donor_geographic_diversification_raw, 
+                                  provider = params$ai_provider, model = params$ai_model,
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc),
+  
+  "Earmarking" = generate_plot_story(donor_earmarking_raw, 
+                                  provider = params$ai_provider, model = params$ai_model, 
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc),
+  
+  "Interest" = generate_plot_story(donor_transaction_desc_raw, 
+                                  provider = params$ai_provider, model = params$ai_model, 
+                                  max_tokens = params$ai_max_tokens_exec),
+  
+  
+  "Volatility" = generate_plot_story(donor_funding_volatility_raw, 
+                                  provider = params$ai_provider, model = params$ai_model, 
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc),
+  
+  
+  "Profile" = generate_plot_story(compare_donor_profiles_raw, 
+                                  provider = params$ai_provider, model = params$ai_model, 
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc),
+  
+  "Shift" = generate_plot_story(donor_geographic_priority_shift_raw, 
+                                  provider = params$ai_provider, model = params$ai_model, 
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc) 
+)
+
+
+chat =  ellmer::chat_azure_openai(
+  system_prompt = "You are a humanitarian funding analyst.Your task is to build a concise executive summary to describe the profile of a specific recipient based on provided information",
+  model = "gpt-4.1-mini",
+  api_version = Sys.getenv("AZURE_OPENAI_API_VERSION"),
+  endpoint = Sys.getenv("AZURE_OPENAI_ENDPOINT"),
+  api_key = Sys.getenv("AZURE_OPENAI_API_KEY"))
+
+exec <- chat$chat( paste0(" Build a short ",params$ai_max_tokens_exec , "  words Donor Profile for ",
+                           params$name, ". \n. Ground your summary on the below information:",
+                           stories["Ranking.long_desc"] , "\n\n",
+                           stories["Funding.long_desc"] , "\n\n",  
+                           stories["Diversification.long_desc"] , "\n\n", 
+                           stories["Earmarking.long_desc"] , "\n\n",
+                           stories["Profile.long_desc"] , "\n\n",
+                           stories["Shift.long_desc"] , "\n\n",  
+                           stories["Interest.long_desc"] , "\n\n",  
+                           stories["Volatility.long_desc"] , "\n\n", 
+                          " \n\n INSTRUCTIONS: Do not repeat the provided content - focus on extracting key high level information for a fund raisers audience"
+                           )) 
+```
+
+## Executive Summary
+
+`r exec`
+
+## Ranking
+
+`r stories["Ranking.long_desc"]`
+  
+```{r Ranking}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+donor_ranking <- normalize_plot(donor_ranking_raw + 
+                    ggplot2::labs(subtitle = stories["Ranking.short_desc"]))
+donor_ranking
+```
+
+
+
+## Funding  
+
+`r stories["Funding.long_desc"]`  
+  
+```{r Funding}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+donor_funding_over_time <- normalize_plot(donor_funding_over_time_raw +
+                ggplot2::labs(subtitle = stories["Funding.short_desc"]))
+
+donor_funding_over_time
+```
+
+## Diversification & Shift
+
+`r stories["Diversification.long_desc"]`  
+  
+```{r Diversification}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+donor_geographic_diversification <- normalize_plot(
+  donor_geographic_diversification_raw +
+    ggplot2::labs(subtitle = stories["Diversification.short_desc"]))
+
+donor_geographic_diversification
+```
+
+## Earmarking
+
+`r stories["Earmarking.long_desc"]`  
+  
+```{r Earmarking}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+donor_earmarking <- normalize_plot(donor_earmarking_raw + 
+              ggplot2::labs(subtitle = stories["Earmarking.short_desc"]))
+donor_earmarking
+```
+
+## Comparison
+
+`r stories["Profile.long_desc"]`  
+  
+```{r Profile}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+compare_donor_profiles <- normalize_plot(compare_donor_profiles_raw +
+                   ggplot2::labs(subtitle = stories["Profile.short_desc"]))
+
+compare_donor_profiles
+```
+
+
+## Geographic Shift
+
+`r stories["Shift.long_desc"]`  
+  
+```{r Shift}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+
+donor_geographic_priority_shift <- normalize_plot(
+  donor_geographic_priority_shift_raw + 
+    ggplot2::labs(subtitle = stories["Shift.short_desc"]))
+
+donor_geographic_priority_shift
+```
+
+
+## Specific Interest
+
+`r stories["Interest.long_desc"]`  
+  
+```{r Interest}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+donor_transaction_desc <- normalize_plot(donor_transaction_desc_raw +
+                          ggplot2::labs(subtitle = stories["Interest.short_desc"]))
+donor_transaction_desc
+```
+
+## Volatility
+
+`r stories["Volatility.long_desc"]`  
+  
+```{r Volatility}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+
+donor_funding_volatility <- normalize_plot(donor_funding_volatility_raw +
+                ggplot2::labs(subtitle = stories["Volatility.short_desc"]))
+donor_funding_volatility
+```
+
+

@@ -6,6 +6,15 @@ editor_options:
 ---
 
 ```{r development, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message=FALSE, 
+  warning=FALSE,
+  fig.width = 8,
+  fig.asp = 0.718,
+  out.width = "90%"
+)
 library(testthat)
 ```
 
@@ -562,5 +571,5 @@ test_that("iati_reshape_all works", {
 ```{r development-inflate, eval=FALSE}
 # Run but keep eval=FALSE to avoid infinite loop
 # Execute in the console directly
-fusen::inflate(flat_file = "dev/dev_data_reshape.Rmd", clean = TRUE, vignette_name = "Data Reshape")
+fusen::inflate(flat_file = "dev/dev_data_reshape.Rmd", clean = TRUE, vignette_name = "-- Data Preparation")
 ```
