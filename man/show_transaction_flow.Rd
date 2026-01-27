@@ -30,7 +30,7 @@ a graph
 Flow diagramme of transations
 }
 \examples{
-show_transaction_flow(year = c(2020, 2021, 2022, 2023), 
+show_transaction_flow(year = c(2022, 2023, 20024, 2025), 
                    ctr_name = "Brazil")
 
 show_transaction_flow(year = 2023, 

@@ -11,8 +11,8 @@ This package includes UNHCR IATI data organised in tabular format together with 
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://unhcr-americas.github.io/iati/docs/}
-  \item Report bugs at \url{https://github.com/unhcr-americas/iati/issues}
+  \item \url{https://edouard-legoupil.github.io/iati/}
+  \item Report bugs at \url{https://github.com/edouard-legoupil/iati/issues}
 }
 
 }
@@ -22,7 +22,11 @@ Useful links:
 Authors:
 \itemize{
   \item Matheus Soldi Hardt \email{matheus@unhcr.org}
-  \item Hisham Galal \email{galalh@unhcr.org}
+}
+
+Other contributors:
+\itemize{
+  \item UNHCR \email{iati@unhcr.org} [copyright holder]
 }
 
 }

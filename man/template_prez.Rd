@@ -4,7 +4,7 @@
 \alias{template_prez}
 \title{Generate a summary powerpoint}
 \usage{
-template_prez(year = 2022, ctr_name, folder = "Prez")
+template_prez(year = 2025, ctr_name, folder = "Prez")
 }
 \arguments{
 \item{year}{A numeric value or a vector of numeric value to filter on year. Note that data pre-2022 are using a different set of indicators}
@@ -23,7 +23,7 @@ Generate a summary powerpoint
 \examples{
 
 ## generate for one country
-# iati::template_prez(year = 2022, 
+# iati::template_prez(year = 2025, 
 #                     ctr_name = "Brazil",
 #                     folder = "dev/Prez")
 
@@ -48,7 +48,7 @@ Generate a summary powerpoint
 #       
 #       for ( ctr in countries) {
 #         cat(paste0("Generating for ", ctr, "\n"))
-#         iati::template_prez(year = 2022,
+#         iati::template_prez(year = 2025,
 #                             ctr_name = ctr,
 #                             folder =  thisfolder)  
 #         }

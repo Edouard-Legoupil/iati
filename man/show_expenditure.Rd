@@ -35,15 +35,15 @@ a graph
 How much expenditures compare to the initial budget (potentially weighted by #)?
 }
 \examples{
-show_expenditure(year = c(2018, 2019,2020, 2021, 2022, 2023), 
+show_expenditure(year = c(2022, 2023, 20024, 2025), 
              ctr_name = "Brazil")
 
-show_expenditure(year = c(2018, 2019,2020, 2021, 2022, 2023), 
+show_expenditure(year = c(2022, 2023, 20024, 2025), 
              ctr_name = "Brazil",
              weight_by = c("refugees", "oip"))
 
 
-show_expenditure(year = c(2018, 2019,2020, 2021, 2022, 2023),
+show_expenditure(year = c(2022, 2023, 20024, 2025),
              ctr_name = "Argentina",
              weight_by =  "all" )
 

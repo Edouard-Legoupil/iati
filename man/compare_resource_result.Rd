@@ -5,7 +5,7 @@
 \title{compare_resource_result}
 \usage{
 compare_resource_result(
-  year = 2022,
+  year = 2025,
   ctr_name = NULL,
   pop_type = NULL,
   show_baseline = FALSE,

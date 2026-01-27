@@ -18,6 +18,11 @@ knitr::opts_chunk$set(
 library(testthat) 
 library(ggplot2)
 library(dplyr)
+library(treemapify)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggrepel)
 # Load already included functions
 pkgload::load_all(export_all = FALSE)
 ```
@@ -25,26 +30,15 @@ pkgload::load_all(export_all = FALSE)
 ## show_donor_ranking
 
 ```{r function-show_donor_ranking}
+
 #' Donor ranking by funding volume (lollipop) with optional WB population/GDP weighting
 #'
-#' @description
-#' - If multiple years are provided, shows donors as rows and yearly points colored by year.
-#' - If a single year is provided, shows donor totals as stems with points by earmarking category.
-#' - If `weight_by != "none"`, population/GDP are pulled from the World Bank using {worldbank}
-#'   and only donors that can be matched to a WB country are displayed.
+#' See original docs above. In single-year earmarking mode, this version computes:
+#'  - Total USD, Unearmarked USD, USD/GDP
+#'  - Scales each to a 0–100 score across donors (min–max)
+#'  - Computes ranks (best=1) per metric
+#'  - Plots x=metric type, y=score; all donors grey, highlighted donor blue with rank labels.
 #'
-#' @param donor_name Optional donor to highlight.
-#' @param top_n_display Number of top donors to display (selected by reference year = max(year)).
-#' @param year NULL (defaults to latest), single year, or vector of years.
-#' @param ctr_name Optional recipient country filter (from iati::dataActivity$ctr_name).
-#' @param weight_by One of "none", "population", "gdp", "population_gdp".
-#' @param donor_country_map Optional named character vector mapping donor org -> WB country name
-#'   (names are donor org strings; values are WB country names). Use when donor names don't match countries.
-#' @param wb_lang Language for WB API queries (default "en").
-#' @param top_n_earmarking In single-year earmarking mode: keep top N earmarking categories overall, rest "Other".
-#' @param verbose Print helpful messages.
-#'
-#' @return ggplot object
 #' @export
 show_donor_ranking <- function(donor_name = NULL,
                                top_n_display = 10,
@@ -57,9 +51,6 @@ show_donor_ranking <- function(donor_name = NULL,
                                verbose = TRUE) {
 
   weight_by <- match.arg(weight_by)
-
-  # ---- Packages used ----
-  # Requires: dplyr, ggplot2, lubridate, forcats, scales, unhcrthemes, worldbank, tidyr, stringr
 
   # ---- 0) Basic checks ----
   if (!is.numeric(top_n_display) || length(top_n_display) != 1 || top_n_display < 1) {
@@ -97,9 +88,8 @@ show_donor_ranking <- function(donor_name = NULL,
       tx_date = as.Date(
         lubridate::parse_date_time(
           .data$transaction_date,
-          orders = c("ymd", "Ymd", "ymd HMS", "Ymd HMS", "ymd HM", "Ymd HM", "dmy", "mdy"),
-          quiet = TRUE,
-          tz = "UTC"
+          orders = c("ymd","Ymd","ymd HMS","Ymd HMS","ymd HM","Ymd HM","dmy","mdy"),
+          quiet = TRUE, tz = "UTC"
         )
       ),
       year_tx = lubridate::year(.data$tx_date),
@@ -108,7 +98,7 @@ show_donor_ranking <- function(donor_name = NULL,
     dplyr::filter(!is.na(.data$year_tx), !is.na(.data$tx_value))
 
   # join activity for recipient country + earmarking (if present)
-  act_cols <- intersect(c("iati_identifier", "ctr_name", "earmarking_name"), names(data_activity))
+  act_cols <- intersect(c("iati_identifier","ctr_name","earmarking_name"), names(data_activity))
   df <- df |>
     dplyr::left_join(data_activity |> dplyr::select(dplyr::all_of(act_cols)), by = "iati_identifier")
 
@@ -132,7 +122,7 @@ show_donor_ranking <- function(donor_name = NULL,
 
   ref_year <- max(years_to_plot, na.rm = TRUE)
 
-  # ---- 3) Aggregate donor totals per year (for ranking selection) ----
+  # ---- 3) Aggregate donor totals per year (for ranking selection, multi-year branch) ----
   donor_totals_ref <- df |>
     dplyr::filter(.data$year_tx == ref_year) |>
     dplyr::group_by(.data$transaction_provider_org) |>
@@ -155,130 +145,70 @@ show_donor_ranking <- function(donor_name = NULL,
   }
 
   df <- df |>
-    dplyr::filter(.data$transaction_provider_org %in% .env$top_donors,
-                  .data$year_tx %in% .env$years_to_plot)
+    dplyr::filter(.data$year_tx %in% .env$years_to_plot)
 
-  # ---- 4) World Bank weights (population / GDP) if requested ----
+  # ---- 4) World Bank GDP (needed for USD/GDP in earmarking scoring chart) ----
+  # We'll match donors to WB countries (via donor_country_map if provided; else donor name as-is).
   wb_weights <- NULL
-  if (weight_by != "none") {
-
-    # Map donor -> country name used for WB matching
-    donors <- unique(df$transaction_provider_org)
-
+  {
+    donors_all <- sort(unique(df$transaction_provider_org))
     donor_country <- if (!is.null(donor_country_map)) {
-      # donor_country_map: named vector (donor org -> WB country name)
-      mapped <- donor_country_map[names(donor_country_map) %in% donors]
+      mapped <- donor_country_map[names(donor_country_map) %in% donors_all]
       dplyr::tibble(
         transaction_provider_org = names(mapped),
         country_name = as.character(mapped)
       )
     } else {
-      # try direct match donor name == country name
       dplyr::tibble(
-        transaction_provider_org = donors,
-        country_name = donors
+        transaction_provider_org = donors_all,
+        country_name = donors_all
       )
     }
 
-    # WB country metadata to get ISO3 codes
-    wb_countries <- worldbank::wb_country(lang = wb_lang)  # provides country_code (iso3) + country_name etc. [5](https://github.com/m-muecke/worldbank)
+    # WB country master
+    if (requireNamespace("worldbank", quietly = TRUE)) {
+      wb_countries <- worldbank::wb_country(lang = wb_lang)
+      donor_country <- donor_country |>
+        dplyr::left_join(
+          wb_countries |> dplyr::select(country_code, country_name),
+          by = "country_name"
+        ) |>
+        dplyr::filter(!is.na(.data$country_code))
 
-    donor_country <- donor_country |>
-      dplyr::left_join(
-        wb_countries |> dplyr::select(country_code, country_name),
-        by = "country_name"
-      ) |>
-      dplyr::filter(!is.na(.data$country_code))
-
-    if (nrow(donor_country) == 0) {
-      stop("weight_by != 'none': No donors could be matched to a World Bank country. Provide `donor_country_map`.")
+      if (nrow(donor_country) > 0) {
+        wb_raw <- worldbank::wb_data(
+          indicator  = "NY.GDP.MKTP.CD",
+          country    = unique(donor_country$country_code),
+          lang       = wb_lang,
+          start_date = min(years_to_plot),
+          end_date   = max(years_to_plot)
+        )
+        wb_weights <- wb_raw |>
+          dplyr::mutate(date = as.integer(.data$date)) |>
+          dplyr::select(.data$country_code, .data$date, gdp = .data$value) |>
+          dplyr::left_join(donor_country, by = "country_code") |>
+          dplyr::rename(year_wb = .data$date) |>
+          dplyr::filter(.data$year_wb %in% .env$years_to_plot) |>
+          dplyr::select(.data$transaction_provider_org, .data$year_wb, .data$gdp)
+      }
+    } else if (verbose) {
+      message("Package 'worldbank' not installed/available. USD/GDP metric will be NA.")
     }
-
-    # pull indicators from WB for the requested years
-    # wb_data() supports indicator, country, start_date, end_date [1](https://m-muecke.github.io/worldbank/reference/wb_data.html)
-    ind <- c(pop = "SP.POP.TOTL", gdp = "NY.GDP.MKTP.CD")
-
-    wb_raw <- worldbank::wb_data(
-      indicator  = unname(ind),
-      country    = unique(donor_country$country_code),
-      lang       = wb_lang,
-      start_date = min(years_to_plot),
-      end_date   = max(years_to_plot)
-    )
-
-    # reshape to wide: one row per (country_code, date)
-    wb_wide <- wb_raw |>
-      dplyr::mutate(date = as.integer(.data$date)) |>
-      dplyr::select(.data$country_code, .data$date, .data$indicator_id, .data$value) |>
-      tidyr::pivot_wider(names_from = .data$indicator_id, values_from = .data$value)
-
-    # join back to donor org and rename columns
-    wb_weights <- donor_country |>
-      dplyr::select(.data$transaction_provider_org, .data$country_code, .data$country_name) |>
-      dplyr::left_join(wb_wide, by = "country_code") |>
-      dplyr::rename(
-        year_wb = .data$date,
-        population = .data$`SP.POP.TOTL`,
-        gdp = .data$`NY.GDP.MKTP.CD`
-      ) |>
-      dplyr::filter(.data$year_wb %in% .env$years_to_plot)
-
-    # keep only donors with valid weights
-    wb_weights <- wb_weights |>
-      dplyr::filter(
-        !is.na(.data$population) | weight_by == "gdp",
-        !is.na(.data$gdp) | weight_by == "population"
-      )
-
-    if (nrow(wb_weights) == 0) {
-      stop("No WB population/GDP found for matched donors in the selected years.")
-    }
-
-    # requirement: "display only donor matching a country" when weighted
-    df <- df |>
-      dplyr::inner_join(
-        wb_weights |> dplyr::select(.data$transaction_provider_org) |> dplyr::distinct(),
-        by = "transaction_provider_org"
-      )
   }
 
-  # ---- 5) Define metric (total vs weighted) ----
-  # weight_by:
-  # - population: USD per person
-  # - gdp: USD per USD GDP (share of GDP, dimensionless)
-  # - population_gdp: USD per (person * USD GDP) rescaled for readability
-  metric_info <- list()
+  
+# ---- define metric_info for subtitle/title even in single-year scoring mode ----
+metric_info <- list()
+metric_info$title <- "Donor scoring (0–100 scaled metrics)"
+metric_info$subtitle_suffix <- "Min–max scaling across donors for three metrics: Total USD, Unearmarked USD, and USD/GDP."
 
-  compute_metric <- function(total_funding, pop, gdp, weight_by) {
-    if (weight_by == "none") return(total_funding)
-    if (weight_by == "population") return(total_funding / pop)
-    if (weight_by == "gdp") return(total_funding / gdp)
-    if (weight_by == "population_gdp") {
-      # rescale: USD / ((pop/1e6)*(gdp/1e9)) = USD * 1e15 / (pop*gdp)
-      return(total_funding * 1e15 / (pop * gdp))
-    }
-    total_funding
-  }
-
-  metric_info$title <- if (weight_by == "none") "Total funding"
-  else if (weight_by == "population") "Funding per person"
-  else if (weight_by == "gdp") "Funding as share of GDP"
-  else "Funding per (1M people × 1B GDP) (rescaled)"
-
-  metric_info$subtitle_suffix <- if (weight_by == "none") {
-    "Metric = total funding (USD)."
-  } else if (weight_by == "population") {
-    "Metric = funding per person (USD/person) using World Bank population."
-  } else if (weight_by == "gdp") {
-    "Metric = funding / GDP (USD/USD) using World Bank GDP (current US$)."
-  } else {
-    "Metric = USD per (1M people × 1B GDP), rescaled (×1e15) using World Bank population & GDP."
-  }
-
-  # ---- 6) MULTI-YEAR: points by year (colored) ----
+  
+  # ===========================
+  # MULTI-YEAR BRANCH (unchanged)
+  # ===========================
+  multi_year <- !is.null(years_requested) && length(years_requested) > 1
   if (multi_year) {
-
-    df_year <- df |>
+df_year <- df |>
       dplyr::group_by(.data$transaction_provider_org, .data$year_tx) |>
       dplyr::summarise(total_funding = sum(.data$tx_value, na.rm = TRUE), .groups = "drop")
 
@@ -353,108 +283,192 @@ show_donor_ranking <- function(donor_name = NULL,
     return(p)
   }
 
-  # ---- 7) SINGLE YEAR: points by earmarking category ----
+  # ===========================
+  # 7) SINGLE YEAR — EARMARKING SCORING CHART
+  # ===========================
   year_single <- years_to_plot[[1]]
 
   if (!("earmarking_name" %in% names(df))) {
     stop("Single-year earmarking mode requires `earmarking_name` in iati::dataActivity.")
   }
 
-  df_earm <- df |>
-    dplyr::filter(.data$year_tx == year_single, !is.na(.data$earmarking_name)) |>
-    dplyr::group_by(.data$transaction_provider_org, .data$earmarking_name) |>
-    dplyr::summarise(total_funding = sum(.data$tx_value, na.rm = TRUE), .groups = "drop")
+  # Use ALL donors available in the selected year (to satisfy "all donors" requirement).
+  df_y <- df |> dplyr::filter(.data$year_tx == .env$year_single)
 
-  # top N earmarking + Other
-  top_earm <- df_earm |>
-    dplyr::group_by(.data$earmarking_name) |>
-    dplyr::summarise(v = sum(.data$total_funding, na.rm = TRUE), .groups = "drop") |>
-    dplyr::arrange(dplyr::desc(.data$v)) |>
-    dplyr::slice_head(n = top_n_earmarking) |>
-    dplyr::pull(.data$earmarking_name) |>
-    as.character()
-
-  df_earm <- df_earm |>
-    dplyr::mutate(
-      earmarking_grp = ifelse(.data$earmarking_name %in% top_earm, as.character(.data$earmarking_name), "Other")
-    ) |>
-    dplyr::group_by(.data$transaction_provider_org, .data$earmarking_grp) |>
-    dplyr::summarise(total_funding = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
-
-  df_tot <- df_earm |>
-    dplyr::group_by(.data$transaction_provider_org) |>
-    dplyr::summarise(total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
-
-  if (weight_by != "none") {
-    wb_y <- wb_weights |>
-      dplyr::rename(year_tx = .data$year_wb) |>
-      dplyr::filter(.data$year_tx == year_single) |>
-      dplyr::select(.data$transaction_provider_org, .data$population, .data$gdp)
-
-    df_tot <- df_tot |>
-      dplyr::left_join(wb_y, by = "transaction_provider_org") |>
-      dplyr::mutate(total = compute_metric(.data$total, .data$population, .data$gdp, weight_by))
-
-    df_earm <- df_earm |>
-      dplyr::left_join(wb_y, by = "transaction_provider_org") |>
-      dplyr::mutate(total_funding = compute_metric(.data$total_funding, .data$population, .data$gdp, weight_by)) |>
-      dplyr::select(-.data$population, -.data$gdp)
+  # Identify unearmarked rows (robust case-insensitive match)
+  is_unearmarked <- function(x) {
+    if (is.null(x)) return(rep(FALSE, length(x)))
+    grepl("un.?earmark", x, ignore.case = TRUE)
   }
 
-  # order donors by total
-  order_levels <- df_tot |>
-    dplyr::arrange(.data$total) |>
-    dplyr::pull(.data$transaction_provider_org) |>
-    as.character()
-
-  df_tot <- df_tot |>
-    dplyr::mutate(donor = factor(.data$transaction_provider_org, levels = order_levels))
-
-  df_earm <- df_earm |>
-    dplyr::mutate(
-      donor = factor(.data$transaction_provider_org, levels = order_levels),
-      highlight = if (is.null(donor_name)) "No" else ifelse(.data$transaction_provider_org == donor_name, "Yes", "No")
+  # Per-donor totals for the selected year
+  donor_totals_year <- df_y |>
+    dplyr::group_by(.data$transaction_provider_org) |>
+    dplyr::summarise(
+      total_usd       = sum(.data$tx_value, na.rm = TRUE),
+      unearmarked_usd = sum(dplyr::if_else(is_unearmarked(.data$earmarking_name), .data$tx_value, 0), na.rm = TRUE),
+      .groups = "drop"
     )
 
-  title <- paste0(
-    "Donor ranking (", year_single, ")",
-    if (!is.null(ctr_name)) paste0(" — ", paste(ctr_name, collapse = ", ")) else ""
-  )
+  # Attach GDP (if available) for USD/GDP
+  if (!is.null(wb_weights)) {
+    donor_totals_year <- donor_totals_year |>
+      dplyr::left_join(
+        wb_weights |> dplyr::filter(.data$year_wb == .env$year_single) |>
+          dplyr::select(.data$transaction_provider_org, .data$gdp),
+        by = "transaction_provider_org"
+      )
+  } else {
+    donor_totals_year <- donor_totals_year |> dplyr::mutate(gdp = NA_real_)
+  }
 
-  subtitle <- paste0(
-    "Top ", top_n_display, " donors. Grey line shows donor total; points show earmarking categories (top ",
-    top_n_earmarking, " + Other). ",
-    metric_info$subtitle_suffix,
-    if (!is.null(donor_name)) paste0(" Highlighted: ", donor_name, ".") else ""
-  )
+  donor_totals_year <- donor_totals_year |>
+    dplyr::mutate(
+      usd_per_gdp = ifelse(!is.na(.data$gdp) & .data$gdp > 0, .data$total_usd / .data$gdp, NA_real_)
+    )
 
-  p <- ggplot2::ggplot(df_earm, ggplot2::aes(y = .data$donor, x = .data$total_funding)) +
-    ggplot2::geom_segment(
-      data = df_tot,
-      ggplot2::aes(y = .data$donor, yend = .data$donor, x = 0, xend = .data$total),
-      inherit.aes = FALSE,
-      linewidth = 1,
-      color = "#B9C2CB"
+  # ---- Scoring helpers (min–max to 0–100) ----
+  minmax_score <- function(v) {
+    if (all(is.na(v))) return(rep(NA_real_, length(v)))
+    vv <- v
+    rng <- range(vv, na.rm = TRUE)
+    if (rng[1] == rng[2]) {
+      # all equal -> assign full score 100
+      return(ifelse(is.na(vv), NA_real_, 100))
+    }
+    100 * (vv - rng[1]) / (rng[2] - rng[1])
+  }
+
+  # Compute scores & ranks per metric
+  scored <- donor_totals_year |>
+    dplyr::mutate(
+      score_total       = minmax_score(.data$total_usd),
+      score_unearmarked = minmax_score(.data$unearmarked_usd),
+      score_usd_gdp     = minmax_score(.data$usd_per_gdp),
+      # Ranks: best (highest value) = 1; ties get same min_rank
+      rk_total          = dplyr::if_else(is.na(.data$total_usd),       NA_integer_, dplyr::min_rank(dplyr::desc(.data$total_usd))),
+      rk_unearmarked    = dplyr::if_else(is.na(.data$unearmarked_usd), NA_integer_, dplyr::min_rank(dplyr::desc(.data$unearmarked_usd))),
+      rk_usd_gdp        = dplyr::if_else(is.na(.data$usd_per_gdp),     NA_integer_, dplyr::min_rank(dplyr::desc(.data$usd_per_gdp)))
+    )
+
+  # Count N (non-NA) donors per metric for labeling "Rk X/N"
+  N_total       <- sum(!is.na(scored$total_usd))
+  N_unearmarked <- sum(!is.na(scored$unearmarked_usd))
+  N_usd_gdp     <- sum(!is.na(scored$usd_per_gdp))
+
+  # Long format for plotting
+  plot_df <- scored |>
+    tidyr::pivot_longer(
+      cols = c(score_total, score_unearmarked, score_usd_gdp,
+               rk_total, rk_unearmarked, rk_usd_gdp),
+      names_to = c(".value","metric"),
+      names_pattern = "(score|rk)_(total|unearmarked|usd_gdp)"
+    ) |>
+    dplyr::mutate(
+      metric = factor(metric,
+                      levels = c("total","unearmarked","usd_gdp"),
+                      labels = c("Total USD","Unearmarked USD","USD/GDP")),
+      # rank label with proper denominator per metric
+      rk_lab = dplyr::case_when(
+        metric == "Total USD"       ~ ifelse(!is.na(.data$rk), paste0("Rk ", .data$rk, "/", N_total), NA_character_),
+        metric == "Unearmarked USD" ~ ifelse(!is.na(.data$rk), paste0("Rk ", .data$rk, "/", N_unearmarked), NA_character_),
+        metric == "USD/GDP"         ~ ifelse(!is.na(.data$rk), paste0("Rk ", .data$rk, "/", N_usd_gdp), NA_character_)
+      )
+    )
+
+  
+ # Determine if we have a highlighted donor
+  has_focus <- !is.null(donor_name) && donor_name %in% plot_df$transaction_provider_org
+
+  # Split data for plotting
+  if (has_focus) {
+    df_focus  <- dplyr::filter(plot_df, .data$transaction_provider_org == .env$donor_name)
+    df_others <- dplyr::filter(plot_df, .data$transaction_provider_org != .env$donor_name)
+  } else {
+    df_focus  <- NULL
+    df_others <- NULL
+  }
+  df_all <- plot_df
+
+  # Aesthetics
+  col_all   <- scales::alpha("#8E99A4", 0.35)  # light grey, transparent
+  col_focus <- "#0072BC"                       # UNHCR blue
+  size_all   <- 3.0
+  size_focus <- 4.6
+
+  # Base plot
+  p <- ggplot2::ggplot(mapping = ggplot2::aes(x = metric, y = score))
+
+  if (has_focus) {
+    # grey: others only
+    p <- p + ggplot2::geom_point(
+      data = df_others,
+      color = col_all, size = size_all,
+      position = ggplot2::position_jitter(width = 0.08, height = 0, seed = 42),
+      na.rm = TRUE
+    )
+    # blue: highlighted donor
+    p <- p + ggplot2::geom_point(
+      data = df_focus,
+      color = col_focus, size = size_focus,
+      na.rm = TRUE
+    )
+    # labels for highlighted donor (rank per metric)
+    if (requireNamespace("ggrepel", quietly = TRUE)) {
+      p <- p + ggrepel::geom_text_repel(
+        data = dplyr::filter(df_focus, !is.na(rk_lab)),
+        ggplot2::aes(label = rk_lab),
+        color = col_focus, size = 4.2,
+        direction = "y", box.padding = 0.15, point.padding = 0.25,
+        segment.color = "grey60", segment.size = 0.3, min.segment.length = 0,
+        nudge_y = 2.5, na.rm = TRUE
+      )
+    } else {
+      p <- p + ggplot2::geom_text(
+        data = dplyr::filter(df_focus, !is.na(rk_lab)),
+        ggplot2::aes(label = rk_lab),
+        color = col_focus, size = 4.0, vjust = -0.7, na.rm = TRUE
+      )
+    }
+  } else {
+    # No highlighted donor: plot everyone in grey
+    p <- p + ggplot2::geom_point(
+      data = df_all,
+      color = col_all, size = size_all,
+      position = ggplot2::position_jitter(width = 0.08, height = 0, seed = 42),
+      na.rm = TRUE
+    )
+  }
+
+  # Scales, labels, theme
+  p <- p +
+    ggplot2::scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20)) +
+    ggplot2::labs(
+      title = paste0("Donor scoring (", year_single, ") — ",
+                     ifelse(has_focus, donor_name, "All donors")),
+      subtitle = "Scores: min–max across donors per metric. Blue = selected donor; label shows rank within each metric.",
+      x = "Score type",
+      y = "Score (0–100)",
+      caption = "Metrics per donor: Total USD; Unearmarked USD (case-insensitive match on 'unearmark'); USD/GDP (WB current US$)."
     ) +
-    ggplot2::geom_point(ggplot2::aes(color = .data$earmarking_grp), size = 3.6, alpha = 0.95) +
-    ggplot2::geom_point(
-      data = dplyr::filter(df_earm, .data$highlight == "Yes"),
-      ggplot2::aes(color = .data$earmarking_grp),
-      size = 5.0
-    ) +
-    ggplot2::scale_color_brewer(palette = "Set2", name = "Earmarking") +
-    ggplot2::scale_x_continuous(labels = scales::label_number(scale_cut = scales::cut_short_scale())) +
-    unhcrthemes::theme_unhcr(grid = "X", axis = "Y", axis_title = FALSE, font_size = 18) +
-    ggplot2::labs(title = title, subtitle = subtitle, x = metric_info$title, y = NULL,
-                  caption = "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)")
+    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, font_size = 18) +
+    ggplot2::theme(legend.position = "none")
 
-  p
+  if (verbose) {
+    message("Single-year earmarking scoring built for year: ", year_single)
+    message("Donors included: ", nrow(donor_totals_year))
+    message("USD/GDP available for ", N_usd_gdp, " donors (",
+            sum(is.na(scored$usd_per_gdp)), " without GDP).")
+    if (!has_focus) message("Tip: pass donor_name = '...' to highlight a donor in blue.")
+  }
+
+  return(p)
+
 }
-
 
 ```
 
-```{r example-show_donor_ranking}
+```{r example-show_donor_ranking, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 8, fig.asp = 0.818, fig.align = "center",  out.width = "90%"}
 # Example usage:
 show_donor_ranking(  
    year = 2025,
@@ -466,7 +480,8 @@ show_donor_ranking(
   top_n_display = 10
 )
 
-show_donor_ranking(   donor_name = "Private donors", 
+show_donor_ranking(   
+  donor_name = "Private donors", 
    year = 2023,
    top_n_display = 10 )
 
@@ -1354,24 +1369,41 @@ test_that("show_donor_transaction_desc works", {
 #'
 #' @description
 #' Creates an overlaid bar chart to compare funding profiles of donors based on
-#' a selected dimension (earmarking, region, or country).
-#'
-#' If only ONE donor is provided in `donor_names`, the function automatically adds a
-#' comparison profile based on other donors. The method is controlled by `avg_method`:
-#' - "mean_of_donors": average of donor-level shares (each donor equal weight)
-#' - "pooled": pooled totals across donors (large donors have more weight)
+#' a selected dimension (earmarking, region, or country). When only one donor 
+#' is provided, a comparator is automatically added based on other donors.
 #'
 #' @param donor_names Character vector of donor names to compare (length 1 or more).
-#' @param by One of "earmarking", "region", or "country".
-#' @param avg_method If only one donor is supplied, how to compute the "others" comparator.
-#'   One of "mean_of_donors" or "pooled".
-#' @param display_mode One of "absolute" (USD values) or "relative" (percentage shares).
+#' @param by One of "earmarking", "region", or "country". The dimension to compare.
+#' @param avg_method If only one donor is supplied, how to compute the "others" comparator:
+#'   - "mean_of_donors": Each donor counts equally, regardless of their total funding
+#'   - "pooled": Donors are weighted by their share of total funding (larger donors have more influence)
+#' @param display_mode Comparison mode:
+#'   - "absolute": Compare absolute USD amounts (sum vs sum)
+#'   - "relative": Compare percentage shares of total funding (profile vs average profile)
 #' @param year Optional numeric/integer vector. Year(s) to filter on.
 #' @param unhcr_region Optional character vector. Filter for UNHCR region(s).
 #' @param programme_lab Optional character vector. Filter for programme name.
 #' @param iati_identifier_ops Optional character vector. Filter for operation ID.
 #' @param ctr_name Optional character vector. Filter for country name.
 #' @param top_n Integer. The number of top categories to show when `by = "country"`.
+#'
+#' @return A ggplot object showing overlaid bars for comparison.
+#'
+#' @details
+#' When `display_mode = "relative"` and a comparator is added:
+#' - Selected donor: Percentage share of its own total funding
+#' - Comparator: Average percentage share across other donors (using `avg_method`)
+#' 
+#' When `display_mode = "absolute"` and a comparator is added:
+#' - Selected donor: Absolute USD amounts
+#' - Comparator: Either:
+#'   - With `avg_method = "mean_of_donors"`: Average donor size × average share
+#'   - With `avg_method = "pooled"`: Summed totals across all other donors
+#'
+#' The chart uses visual cues to distinguish series:
+#' - Wider transparent bars: Comparator
+#' - Narrower solid bars: Selected donor(s)
+#' - Colors represent categories within the dimension
 #'
 #' @import ggplot2
 #' @import dplyr
@@ -1488,57 +1520,97 @@ compare_donor_profiles <- function(donor_names,
     show_others <- build_profile(others_df, by)
 
     if (nrow(show_others) == 0) {
-      warning("No data found for 'other donors' under the specified filters. Returning only the selected donor.")
+      warning("No data found for 'other donors' under the specified filters. Showing only selected donor.")
       show_data <- show_selected
       add_comparator <- FALSE
       
     } else {
 
       if (avg_method == "mean_of_donors") {
-        comparator_label <- "Average of other donors"
-
-        # per-donor totals for others
-        others_totals <- show_others |>
-          dplyr::group_by(.data$transaction_provider_org) |>
-          dplyr::summarise(donor_total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
-
-        # donor-level shares, then mean share across donors (equal weight)
-        others_shares <- show_others |>
-          dplyr::left_join(others_totals, by = "transaction_provider_org") |>
-          dplyr::mutate(share = dplyr::if_else(.data$donor_total > 0,
-                                              .data$total_funding / .data$donor_total,
-                                              NA_real_)) |>
-          dplyr::group_by(.data$dimension) |>
-          dplyr::summarise(avg_share = mean(.data$share, na.rm = TRUE), .groups = "drop")
-
-        # For overlaid chart, we need to compute total funding for the comparator
-        mean_total_others <- others_totals |>
-          dplyr::summarise(mean_total = mean(.data$donor_total, na.rm = TRUE), .groups = "drop") |>
-          dplyr::pull(.data$mean_total)
-
-        show_cmp <- others_shares |>
-          dplyr::transmute(
-            transaction_provider_org = comparator_label,
-            dimension = .data$dimension,
-            total_funding = .data$avg_share * mean_total_others,
-            share = .data$avg_share
-          )
+        comparator_label <- "Average of other donors (equal weight)"
+        
+        # For relative display: average of donor-level percentage shares
+        if (display_mode == "relative") {
+          # Calculate percentage shares for each other donor
+          others_totals <- show_others |>
+            dplyr::group_by(.data$transaction_provider_org) |>
+            dplyr::summarise(donor_total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
+          
+          others_shares <- show_others |>
+            dplyr::left_join(others_totals, by = "transaction_provider_org") |>
+            dplyr::mutate(
+              share = dplyr::if_else(.data$donor_total > 0, 
+                                    .data$total_funding / .data$donor_total, 
+                                    NA_real_)
+            ) |>
+            dplyr::group_by(.data$dimension) |>
+            dplyr::summarise(avg_share = mean(.data$share, na.rm = TRUE), .groups = "drop")
+          
+          show_cmp <- others_shares |>
+            dplyr::mutate(
+              transaction_provider_org = comparator_label,
+              total_funding = NA_real_,  # Not used for relative display
+              share = .data$avg_share
+            ) |>
+            dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
+          
+        } else { # display_mode == "absolute"
+          # For absolute display: average share × average donor size
+          others_totals <- show_others |>
+            dplyr::group_by(.data$transaction_provider_org) |>
+            dplyr::summarise(donor_total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
+          
+          mean_total_others <- others_totals |>
+            dplyr::summarise(mean_total = mean(.data$donor_total, na.rm = TRUE), .groups = "drop") |>
+            dplyr::pull(.data$mean_total)
+          
+          others_shares <- show_others |>
+            dplyr::left_join(others_totals, by = "transaction_provider_org") |>
+            dplyr::mutate(
+              share = dplyr::if_else(.data$donor_total > 0, 
+                                    .data$total_funding / .data$donor_total, 
+                                    NA_real_)
+            ) |>
+            dplyr::group_by(.data$dimension) |>
+            dplyr::summarise(avg_share = mean(.data$share, na.rm = TRUE), .groups = "drop")
+          
+          show_cmp <- others_shares |>
+            dplyr::mutate(
+              transaction_provider_org = comparator_label,
+              total_funding = .data$avg_share * mean_total_others,
+              share = .data$avg_share
+            ) |>
+            dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
+        }
 
       } else if (avg_method == "pooled") {
         comparator_label <- "Other donors (pooled)"
-
-        show_cmp <- show_others |>
+        
+        # For both relative and absolute: use pooled totals
+        pooled_totals <- show_others |>
           dplyr::group_by(.data$dimension) |>
           dplyr::summarise(
             total_funding = sum(.data$total_funding, na.rm = TRUE),
             .groups = "drop"
-          ) |>
-          dplyr::mutate(
-            transaction_provider_org = comparator_label,
-            # Calculate share for relative display
-            share = .data$total_funding / sum(.data$total_funding, na.rm = TRUE)
-          ) |>
-          dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
+          )
+        
+        if (display_mode == "relative") {
+          # Calculate percentage share of pooled total
+          grand_total <- sum(pooled_totals$total_funding, na.rm = TRUE)
+          show_cmp <- pooled_totals |>
+            dplyr::mutate(
+              transaction_provider_org = comparator_label,
+              share = .data$total_funding / grand_total
+            ) |>
+            dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
+        } else { # display_mode == "absolute"
+          show_cmp <- pooled_totals |>
+            dplyr::mutate(
+              transaction_provider_org = comparator_label,
+              share = NA_real_
+            ) |>
+            dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
+        }
       }
 
       # Calculate shares for selected donor
@@ -1552,7 +1624,7 @@ compare_donor_profiles <- function(donor_names,
     }
 
   } else {
-    # Calculate shares for multiple donors
+    # Multiple donors - calculate shares if needed
     if (display_mode == "relative") {
       donor_totals <- show_selected |>
         dplyr::group_by(.data$transaction_provider_org) |>
@@ -1593,12 +1665,14 @@ compare_donor_profiles <- function(donor_names,
     dplyr::pull(.data$dimension)
   
   # Add type column for plotting
+  
+  if (is.null(comparator_label)) comparator_label <- NA_character_
   show_data <- show_data |>
     dplyr::mutate(
       dimension = factor(.data$dimension, levels = dimension_levels),
       type = dplyr::case_when(
         .data$transaction_provider_org %in% donor_names & add_comparator ~ "Selected Donor",
-        .data$transaction_provider_org %in% donor_names & !add_comparator ~ paste(donor_names, collapse = " & "),
+        .data$transaction_provider_org %in% donor_names & !add_comparator ~ "Selected Donors",
         .data$transaction_provider_org == comparator_label ~ "Comparator",
         TRUE ~ "Other"
       ),
@@ -1630,63 +1704,67 @@ compare_donor_profiles <- function(donor_names,
     if (length(year_filter) == 1) {
       paste("in", year_filter)
     } else {
-      paste("(", paste(range(year_filter), collapse = "-"), ")")
+      paste(range(year_filter), collapse = "-")
     }
   } else {
-    ""
+    "all years"
   }
   
-  # Build title based on number of donors
+  # Build title based on number of donors and display mode
   if (add_comparator) {
-    title <- paste(donor_names[1], "vs Comparator:", stringr::str_to_title(by), "Profile", year_str)
+    if (display_mode == "relative") {
+      title <- paste(donor_names[1], "vs average of other donors:", stringr::str_to_title(by), "profile", year_str)
+    } else {
+      title <- paste(donor_names[1], "vs", tolower(gsub("\\(.*\\)", "", comparator_label)), ":", stringr::str_to_title(by), "profile", year_str)
+    }
   } else if (length(donor_names) == 1) {
-    title <- paste(donor_names[1], ":", stringr::str_to_title(by), "Profile", year_str)
+    title <- paste(donor_names[1], ":", stringr::str_to_title(by), "profile", year_str)
   } else {
-    title <- paste(paste(donor_names, collapse = " & "), ":", stringr::str_to_title(by), "Comparison", year_str)
+    title <- paste("Comparison of", paste(donor_names, collapse = " & "), ":", stringr::str_to_title(by), "profile", year_str)
   }
   
-  # Trim any extra spaces
-  title <- stringr::str_squish(title)
+  # Capitalize first letter of each word
+  title <- stringr::str_to_title(title)
 
   # ---- 9) Build interpretation hints for caption ----
   caption_parts <- c(
     "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
   )
   
-  # Add interpretation hints based on chart type
+  # Add interpretation hints
   if (add_comparator) {
     caption_parts <- c(caption_parts, 
                        "Wider transparent bars: Comparator | Narrower solid bars: Selected donor")
     
     # Add method hint
     method_desc <- if (avg_method == "mean_of_donors") {
-      "Comparator: equal-weight average of donor-level shares"
+      "Comparator: average of donor-level shares (each donor counts equally)"
     } else {
-      "Comparator: pooled totals across all other donors"
+      "Comparator: pooled totals (donors weighted by funding share)"
     }
     caption_parts <- c(caption_parts, method_desc)
   }
   
   if (by == "earmarking") {
     caption_parts <- c(caption_parts, 
-                       "Colors: Red=Tightly Earmarked, Orange=Earmarked, Blue=Softly Earmarked, Green=Unearmarked")
+                       "Colors: Tightly Earmarked (red), Earmarked (orange), Softly Earmarked (blue), Unearmarked (green)")
   }
   
   if (display_mode == "relative") {
-    caption_parts <- c(caption_parts, "Values show percentage share of total funding")
+    caption_parts <- c(caption_parts, "Values: percentage share of total funding")
   } else {
-    caption_parts <- c(caption_parts, "Values show absolute USD amounts")
+    caption_parts <- c(caption_parts, "Values: absolute USD amounts")
   }
   
   # Add filter information if any filters applied
   filter_parts <- c()
-  if (!is.null(region_filter)) {
+  if (!is.null(region_filter) && length(region_filter) <= 3) {
     filter_parts <- c(filter_parts, paste("Region:", paste(region_filter, collapse = ", ")))
   }
-  if (!is.null(country_filter)) {
+  if (!is.null(country_filter) && length(country_filter) <= 3) {
     filter_parts <- c(filter_parts, paste("Country:", paste(country_filter, collapse = ", ")))
   }
-  if (!is.null(programme_filter)) {
+  if (!is.null(programme_filter) && length(programme_filter) <= 2) {
     filter_parts <- c(filter_parts, paste("Programme:", paste(programme_filter, collapse = ", ")))
   }
   
@@ -1701,8 +1779,8 @@ compare_donor_profiles <- function(donor_names,
   plot_data <- show_data
   
   # Set bar widths and transparency
-  bar_widths <- c("Selected Donor" = 0.6, "Comparator" = 0.8)
-  bar_alphas <- c("Selected Donor" = 0.9, "Comparator" = 0.4)
+  bar_widths <- c("Selected Donor" = 0.6, "Selected Donors" = 0.6, "Comparator" = 0.8)
+  bar_alphas <- c("Selected Donor" = 0.9, "Selected Donors" = 0.9, "Comparator" = 0.4)
   
   # Get unique types in correct order (Comparator first for layering)
   types_in_data <- unique(plot_data$type)
@@ -1726,34 +1804,21 @@ compare_donor_profiles <- function(donor_names,
         ggplot2::aes(x = .data$dimension, y = .data$value, fill = .data$dimension),
         width = bar_widths[bar_type],
         alpha = bar_alphas[bar_type],
-        position = "identity"  # Fully overlaid
+        position = "identity",  # Fully overlaid
+        show.legend = FALSE      # Suppress individual bar legends
       )
     }
   }
   
-  # Create custom theme without caption settings from unhcrthemes
-  base_theme <- unhcrthemes::theme_unhcr(grid = "X", axis = "y", axis_title = "X", font_size = 18)
-  
-  # Remove the caption element from base_theme if it exists
-  if (!is.null(base_theme$plot.caption)) {
-    base_theme$plot.caption <- NULL
-  }
-  
-  # Add plot elements with custom caption
+  # Build the complete plot with all elements before applying any theme
   p <- p +
     ggplot2::coord_flip() +
-    ggplot2::scale_fill_manual(values = fill_colors, name = stringr::str_to_title(by)) +
-    base_theme +
+    ggplot2::scale_fill_manual(values = fill_colors) +
     ggplot2::labs(
       title = title,
       x = NULL,
       y = if (display_mode == "absolute") "Total Funding (USD)" else "Share of Total Funding (%)",
       caption = caption
-    ) +
-    ggplot2::theme(
-      legend.position = "right",
-      legend.key.size = ggplot2::unit(0.8, "cm"),
-      plot.caption = ggplot2::element_text(size = 10, hjust = 0, color = "gray40", lineheight = 1.2)
     )
   
   # Add appropriate y-axis scale
@@ -1768,19 +1833,68 @@ compare_donor_profiles <- function(donor_names,
       expand = ggplot2::expansion(mult = c(0, 0.05))
     )
   }
-
-  p
+  
+  # Create a custom theme that combines UNHCR theme with our modifications
+  # Apply everything in a single theme() call to avoid conflicts
+  p <- p + ggplot2::theme(
+    # Base UNHCR theme settings
+    panel.grid.major.y = ggplot2::element_blank(),
+    panel.grid.minor.y = ggplot2::element_blank(),
+    panel.grid.major.x = ggplot2::element_line(color = "#D3D3D3", linewidth = 0.5),
+    panel.grid.minor.x = ggplot2::element_blank(),
+    panel.background = ggplot2::element_rect(fill = "white", color = NA),
+    plot.background = ggplot2::element_rect(fill = "white", color = NA),
+    axis.line.y = ggplot2::element_blank(),
+    axis.line.x = ggplot2::element_line(color = "black", linewidth = 0.5),
+    axis.ticks.y = ggplot2::element_blank(),
+    axis.ticks.x = ggplot2::element_line(color = "black", linewidth = 0.5),
+    axis.text = ggplot2::element_text(size = 14, color = "black"),
+    axis.title.x = ggplot2::element_text(size = 16, color = "black", margin = ggplot2::margin(t = 10)),
+    axis.title.y = ggplot2::element_blank(),
+    plot.title = ggplot2::element_text(size = 20, face = "bold", color = "black", 
+                                       margin = ggplot2::margin(b = 10)),
+    plot.subtitle = ggplot2::element_text(size = 16, color = "black", margin = ggplot2::margin(b = 15)),
+    
+    # Our custom modifications
+    legend.position = "none",
+    plot.caption = ggplot2::element_text(
+      size = 9, 
+      hjust = 0, 
+      color = "gray40", 
+      lineheight = 1.1,
+      margin = ggplot2::margin(t = 10)
+    )
+  )
+  
+  return(p)
 }
 ```
 
 ```{r example-compare_donor_profiles, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 8, fig.asp = 0.618, fig.align = "center",  out.width = "90%"}
 # Compare Donor Profiles
 
+## using mean
 compare_donor_profiles(
   donor_names = "Private donors",
   by = "earmarking",
   year = 2025,
   avg_method = "mean_of_donors",
+  display_mode = "absolute"
+)
+compare_donor_profiles(
+  donor_names = "Private donors",
+  by = "earmarking",
+  year = 2025,
+  avg_method = "mean_of_donors",
+  display_mode = "relative"
+)
+
+## using pooled
+compare_donor_profiles(
+  donor_names = "Private donors",
+  by = "earmarking",
+  year = 2025,
+  avg_method = "pooled",
   display_mode = "absolute"
 )
 
@@ -1789,7 +1903,8 @@ compare_donor_profiles(
   donor_names = "Private donors",
   by = "earmarking",
   year = 2025,
-  avg_method = "pooled"
+  avg_method = "pooled",
+  display_mode = "relative"
 )
 
 
@@ -1797,13 +1912,16 @@ compare_donor_profiles(
   donor_names = "Private donors",
   by = "region",
   year = 2025,
-  avg_method = "pooled"
+  avg_method = "pooled",
+  display_mode = "relative"
 )
 
 compare_donor_profiles(
   donor_names = c("Private donors", 
  "Switzerland - Swiss Agency for Development and Cooperation (SDC)"), 
-   by = "earmarking", year = 2025, ctr_name = "Brazil")
+   by = "earmarking", 
+ year = 2025, 
+ ctr_name = "Brazil")
 ```
   
 ```{r tests-compare_donor_profiles}
@@ -1815,110 +1933,225 @@ test_that("show_compare_donor_profiles works", {
 ## show_donor_geographic_priority_shift
 
 ```{r function-show_donor_geographic_priority_shift}
-#' Plot donor geographic priority shift over time
+
+#' Plot donor geographic priority shift over time (alluvial, CVD-safe colors + correct labels)
 #'
-#' @param donor_name The name of the specific donor to highlight.
-#' @param top_n_countries The number of top recipient countries to display for the donor.
-#' @param start_year The starting year for the plot.
-#' @param end_year The ending year for the plot.
-#' @param verbose Logical, whether to print debug messages.
+#' @param donor_name The donor to highlight.
+#' @param top_n_countries Number of top recipient countries to display.
+#' @param start_year Optional start year.
+#' @param end_year Optional end year.
+#' @param verbose Print diagnostic messages.
 #'
-#' @return A ggplot object.
+#' @return A fully labeled ggalluvial plot.
 #' @export
-show_donor_geographic_priority_shift <- function(donor_name, 
-                                                 top_n_countries = 5, 
-                                                 start_year = NULL, 
-                                                 end_year = NULL,
-                                                 verbose = TRUE) {
-  
-  data_activity <- iati::dataActivity
+show_donor_geographic_priority_shift <- function(
+  donor_name,
+  top_n_countries = 5,
+  start_year = NULL,
+  end_year = NULL,
+  verbose = TRUE
+) {
+
+  # ---- Required packages ----
+  if (!requireNamespace("ggalluvial", quietly = TRUE)) {
+    stop("Package `ggalluvial` is required. Install with install.packages('ggalluvial').")
+  }
+  has_ggrepel <- requireNamespace("ggrepel", quietly = TRUE)
+
+  # ---- Load data ----
+  data_activity    <- iati::dataActivity
   data_transaction <- iati::dataTransaction
-  
-  
-   
-  # Prepare data
+
+  # ---- Prepare data ----
   df_plot <- data_transaction |>
-    inner_join(
-      data_activity |> select(iati_identifier, ctr_name), 
+    dplyr::inner_join(
+      data_activity |> dplyr::select(iati_identifier, ctr_name),
       by = "iati_identifier"
     ) |>
-    mutate(
+    dplyr::mutate(
       year = lubridate::year(lubridate::ymd(transaction_date)),
       transaction_value = as.numeric(transaction_value)
     ) |>
-    filter(!is.na(year), !is.na(transaction_value_USD), !is.na(ctr_name)) |>
-    group_by(transaction_provider_org, year, ctr_name) |>
-    summarise(total_funding = sum(transaction_value_USD, na.rm = TRUE), .groups = "drop") |>
-    ungroup()
-  
-  # Filter by year if specified
-  if (!is.null(start_year)) {
-    df_plot <- filter(df_plot, year >= start_year)
-  }
-  if (!is.null(end_year)) {
-    df_plot <- filter(df_plot, year <= end_year)
-  }
-  
-  # Calculate percentage of funding per country per year for the selected donor
-  df_donor_geo_pct <- df_plot |>
-    filter(transaction_provider_org == donor_name) |>
-    group_by(year) |>
-    mutate(total_year_funding = sum(total_funding, na.rm = TRUE)) |>
-    ungroup() |>
-    mutate(
-      funding_pct = total_funding / total_year_funding,
-      recipient_country = forcats::fct_reorder(ctr_name, total_funding, .fun = sum, .desc = TRUE)
-    )
-  
-  # Identify top N countries for the donor across all selected years
-  top_countries_donor <- df_donor_geo_pct |>
-    group_by(recipient_country) |>
-    summarise(total_funding_country = sum(total_funding, na.rm = TRUE), .groups = "drop") |>
-    arrange(desc(total_funding_country)) |>
-    head(top_n_countries) |>
-    pull(recipient_country)
-  
-  # Filter for top N countries and group others
-  df_show_final <- df_donor_geo_pct |>
-    mutate(
-      country_group = ifelse(recipient_country %in% top_countries_donor, as.character(recipient_country), "Other Countries")
+    dplyr::filter(
+      !is.na(year),
+      !is.na(transaction_value_USD),
+      !is.na(ctr_name)
     ) |>
-    group_by(year, country_group) |>
-    summarise(funding_pct = sum(funding_pct, na.rm = TRUE), .groups = "drop") |>
-    ungroup() |>
-    # Ensure "Other Countries" is at the bottom of the stack
-    mutate(country_group = factor(country_group, levels = c(rev(top_countries_donor), "Other Countries")))
-  
-  # Plotting
-  p <- ggplot(df_show_final, aes(x = year, y = funding_pct, fill = country_group)) +
-    geom_bar(stat = "identity", position = "stack") +
-    unhcrthemes::scale_fill_unhcr_d("pal_blue", order = c(1:top_n_countries, top_n_countries + 1)) + # Use UNHCR palette
-    labs(
-      title = paste0("Geographic Priority Shift for ", donor_name),
-      subtitle = paste0("Top ", top_n_countries, " Countries vs. Others (", 
-                        min(df_show_final$year), "-", max(df_show_final$year), ")"),
-      x = "Year",
-      y = "Percentage of Total Funding",
-      fill = "Recipient Country"
+    dplyr::group_by(transaction_provider_org, year, ctr_name) |>
+    dplyr::summarise(
+      total_funding = sum(transaction_value_USD, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # ---- Year filters ----
+  if (!is.null(start_year)) df_plot <- dplyr::filter(df_plot, year >= start_year)
+  if (!is.null(end_year))   df_plot <- dplyr::filter(df_plot, year <= end_year)
+
+  # ---- Donor subset ----
+  df_donor <- df_plot |>
+    dplyr::filter(transaction_provider_org == donor_name) |>
+    dplyr::group_by(year) |>
+    dplyr::mutate(total_year_funding = sum(total_funding)) |>
+    dplyr::ungroup() |>
+    dplyr::filter(total_year_funding > 0) |>
+    dplyr::mutate(
+      funding_pct = total_funding / total_year_funding,
+      recipient_country = forcats::fct_reorder(
+        ctr_name, total_funding, .fun = sum, .desc = TRUE
+      )
+    )
+
+  # ---- Identify Top-N Countries ----
+  top_countries <- df_donor |>
+    dplyr::group_by(recipient_country) |>
+    dplyr::summarise(tot = sum(total_funding)) |>
+    dplyr::arrange(desc(tot)) |>
+    utils::head(top_n_countries) |>
+    dplyr::pull(recipient_country) |>
+    as.character()
+
+  # ---- Collapse others ----
+  df_show <- df_donor |>
+    dplyr::mutate(
+      country_group = ifelse(
+        recipient_country %in% top_countries,
+        as.character(recipient_country),
+        "Other Countries"
+      )
+    ) |>
+    dplyr::group_by(year, country_group) |>
+    dplyr::summarise(funding_pct = sum(funding_pct), .groups = "drop") |>
+    dplyr::ungroup()
+
+  # ---- Factor ordering ----
+  level_order <- c(top_countries, "Other Countries")
+
+  df_show <- df_show |>
+    dplyr::mutate(
+      country_group = factor(country_group, levels = level_order),
+      year_fct = factor(year, levels = sort(unique(year)))
+    )
+
+  # ---- CVD-safe palette ----
+  get_cvd_palette <- function(n) {
+    okabe_ito <- c(
+      "#0072B2", "#E69F00", "#009E73", "#D55E00",
+      "#CC79A7", "#56B4E9", "#F0E442", "#000000"
+    )
+    if (n <= length(okabe_ito)) okabe_ito[seq_len(n)]
+    else if (requireNamespace("viridisLite", quietly = TRUE))
+      viridisLite::viridis(n)
+    else rep(okabe_ito, length.out = n)
+  }
+
+  top_cols <- get_cvd_palette(length(top_countries))
+  grey_other <- "#B3B3B3"
+
+  fill_values <- stats::setNames(
+    c(top_cols, grey_other),
+    c(top_countries, "Other Countries")
+  )
+
+  # ---- Build alluvial plot (NO labels yet) ----
+  p <- ggplot2::ggplot(
+    df_show,
+    ggplot2::aes(
+      x = year_fct,
+      y = funding_pct,
+      alluvium = country_group,
+      stratum = country_group,
+      fill = country_group
+    )
+  ) +
+    ggalluvial::geom_alluvium(
+      width = 0.25,
+      knot.pos = 0.4,
+      aes.bind = "flows",
+      decreasing = FALSE,
+      alpha = 0.9
     ) +
-    scale_y_continuous(labels = scales::percent) +
-    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, font_size = 18) +
-    theme(legend.position = "right")
-  
+    ggplot2::scale_fill_manual(values = fill_values) +
+    ggplot2::scale_y_continuous(labels = scales::percent) +
+    ggplot2::scale_x_discrete(expand = ggplot2::expansion(add = c(0.05, 0.65))) +
+    ggplot2::labs(
+      title = paste0("Disbursements Shift for ", donor_name, " | ",
+                     min(df_show$year), "–", max(df_show$year)),
+      #subtitle = " ",
+      x = "",
+      y = ""
+    ) +
+    unhcrthemes::theme_unhcr( font_size = 22) +
+    ggplot2::theme(
+      legend.position = "none",
+      plot.margin = ggplot2::margin(5.5, 55, 5.5, 5.5)
+    ) +
+    ggplot2::coord_cartesian(clip = "off")
+
+  # ---- Extract TRUE ymax/ymin from plotted polygons ----
+  pb <- ggplot_build(p)
+  alluvium_df <- pb$data[[1]]
+
+  last_year <- max(df_show$year)
+  last_year_fct <- as.character(last_year)
+
+  last_x_id <- which(levels(df_show$year_fct) == last_year_fct)
+
+  ribbon_bounds <- alluvium_df |>
+    dplyr::filter(x == last_x_id) |>
+    dplyr::group_by(fill) |>
+    dplyr::summarise(
+      ymin = min(y),
+      ymax = max(y),
+      y_mid = (ymin + ymax) / 2,
+      .groups = "drop"
+    )
+
+  labels_df <- ribbon_bounds |>
+    dplyr::mutate(
+      country_group = names(fill_values)[match(fill, fill_values)],
+      label = ifelse(country_group == "Other Countries", "Other", country_group),
+      year_fct = last_year_fct
+    )
+
+  # ---- Add Direct Labels ----
+  if (has_ggrepel) {
+    p <- p +
+      ggrepel::geom_label_repel(
+        data = labels_df,
+        ggplot2::aes(x = year_fct, y = y_mid, label = label),
+        inherit.aes = FALSE,
+        nudge_x = 0.4,
+        hjust = 0,
+        direction = "y",
+        segment.color = "grey60",
+        size = 4.5,
+        max.overlaps = Inf
+      )
+  } else {
+    p <- p +
+      ggplot2::geom_text(
+        data = labels_df,
+        ggplot2::aes(x = year_fct, y = y_mid, label = label),
+        inherit.aes = FALSE,
+        hjust = 0,
+        nudge_x = 0.25,
+        size = 6.5
+      )
+  }
+
   return(p)
 }
 
 ```
 
-```{r example-show_donor_geographic_priority_shift}
+```{r example-show_donor_geographic_priority_shift, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 8, fig.asp = 0.618, fig.align = "center",  out.width = "90%"}
 # Example usage: 
-p_geo <- show_donor_geographic_priority_shift(
+show_donor_geographic_priority_shift(
    donor_name = "Private donors", 
-   top_n_countries = 4,
+   top_n_countries = 7,
    start_year = 2022,
    end_year = 2025
  )
-print(p_geo)
 ```
 
 ```{r tests-show_donor_geographic_priority_shift}
@@ -1935,161 +2168,262 @@ test_that("show_donor_geographic_priority_shift works", {
 })
 ```
 
-## show_donor_geographic_diversification
+## show_donor_activity_diversification
 
-```{r function-show_donor_geographic_diversification}
-#' Plot donor geographic diversification over time
+```{r function-show_donor_activity_diversification}
+
+#' Plot donor activity diversification over time
+#' (percentage coverage vs. benchmark lines: Top 5%, Top 10%, Top 50% donors)
+#' with donor points, per-year labels (number of operations), and LOESS smoothing
 #'
-#' @param donor_name The name of the donor to highlight.
-#' @param start_year Optional start year filter.
-#' @param end_year Optional end year filter.
-#' @param other_stat Statistic for "Other donors": one of "mean" or "median".
-#' @param verbose Logical, whether to print debug messages.
+#' @description
+#' Shows the **% of UNHCR operations (countries)** covered by a selected donor each year.
+#' Adds three benchmark lines: the **average** coverage (per year) for donors ranked
+#' by annual funding in the **Top 5%**, **Top 10%**, and **Top 50%**.
+#' The donor’s path uses **geom_smooth(method = "loess", se = FALSE)** instead of a straight line,
+#' with **points** and **`ggrepel` labels** (absolute # of countries) for the donor only.
+#'
+#' @param donor_name Character. Donor to highlight (`transaction_provider_org`).
+#' @param start_year Optional integer. Inclusive lower bound on year.
+#' @param end_year Optional integer. Inclusive upper bound on year.
+#' @param loess_span Numeric (0–1+). LOESS span for donor smoothing (default 0.6).
+#' @param verbose Logical. Print diagnostics (default TRUE).
 #'
 #' @return A ggplot object.
+#'
+#' @import dplyr ggplot2 scales forcats unhcrthemes
+#' @importFrom tidyr pivot_longer
 #' @export
-show_donor_geographic_diversification <- function(donor_name,
-                                                  start_year = NULL,
-                                                  end_year = NULL,
-                                                  other_stat = c("mean", "median"),
-                                                  verbose = TRUE) {
-
-  other_stat <- match.arg(other_stat)
-
-  data_activity <- iati::dataActivity
+show_donor_activity_diversification <- function(
+  donor_name,
+  start_year = NULL,
+  end_year   = NULL,
+  loess_span = 0.6,
+  verbose    = TRUE
+) {
+  # ---- Data ----
+  data_activity    <- iati::dataActivity
   data_transaction <- iati::dataTransaction
-  df <-  data_transaction
- 
 
-  # ---- 2) Prepare joined dataset + parse year robustly ----
+  # ---- Prepare joined dataset ----
   df <- data_transaction |>
-    dplyr::filter(.data$transaction_type_name == "Incoming Commitment") |>  
-    dplyr::left_join(data_activity , by = "iati_identifier")  |>
+    dplyr::filter(.data$transaction_type_name == "Incoming Commitment") |>
+    dplyr::left_join(
+      data_activity |> dplyr::select(.data$iati_identifier, .data$ctr_name),
+      by = "iati_identifier"
+    ) |>
+    dplyr::mutate(year = lubridate::year(lubridate::ymd(.data$transaction_date))) |>
     dplyr::filter(!is.na(.data$year), !is.na(.data$ctr_name))
 
-  # ---- 3) Optional year filtering ----
-  if (!is.null(start_year)) df <- df |> dplyr::filter(.data$year >= .env$start_year)
-  if (!is.null(end_year))   df <- df |> dplyr::filter(.data$year <= .env$end_year)
-
+  # ---- Year filter ----
+  if (!is.null(start_year)) df <- df |> dplyr::filter(.data$year >= start_year)
+  if (!is.null(end_year))   df <- df |> dplyr::filter(.data$year <= end_year)
   if (nrow(df) == 0) stop("No data after filtering (check start_year/end_year).")
 
-  # ---- 4) Countries per donor-year ----
-  df_countries <- df |>
+  # ---- Denominator: total # countries per year ----
+  total_countries_by_year <- df |>
+    dplyr::group_by(.data$year) |>
+    dplyr::summarise(total_countries = dplyr::n_distinct(.data$ctr_name), .groups = "drop")
+
+  # ---- Donor-year: countries covered & coverage % ----
+  donor_countries_by_year <- df |>
     dplyr::group_by(.data$transaction_provider_org, .data$year) |>
     dplyr::summarise(
-      num_countries = dplyr::n_distinct(.data$ctr_name),
-      .groups = "drop"
-    )
-
-  # ---- 5) Overall average across all donors per year ----
-  avg_all <- df_countries |>
-    dplyr::group_by(.data$year) |>
-    dplyr::summarise(
-      average_countries_all = mean(.data$num_countries, na.rm = TRUE),
-      .groups = "drop"
-    )
-
-  # ---- 6) Selected donor series + "Other donors" statistic ----
-  donor_exists <- donor_name %in% df_countries$transaction_provider_org
-  if (!donor_exists && verbose) {
-    warning("Donor '", donor_name, "' not found in data. Plotting only all-donor average and other-donor statistic.")
-  }
-
-  selected_series <- df_countries |>
-    dplyr::filter(.data$transaction_provider_org == donor_name) |>
-    dplyr::mutate(series = "Selected donor")
-
-  other_label <- paste0("Other donors (", other_stat, ")")
-
-  others_series <- df_countries |>
-    dplyr::filter(.data$transaction_provider_org != donor_name) |>
-    dplyr::group_by(.data$year) |>
-    dplyr::summarise(
-      num_countries =
-        if (other_stat == "mean") mean(.data$num_countries, na.rm = TRUE)
-        else median(.data$num_countries, na.rm = TRUE),
+      num_countries      = dplyr::n_distinct(.data$ctr_name),
+      total_funding_year = sum(.data$transaction_value_USD, na.rm = TRUE),
       .groups = "drop"
     ) |>
-    dplyr::mutate(series = other_label)
+    dplyr::left_join(total_countries_by_year, by = "year") |>
+    dplyr::mutate(coverage_pct = .data$num_countries / .data$total_countries)
 
-  plot_series <- dplyr::bind_rows(selected_series, others_series) |>
-    dplyr::select("year", "num_countries", "series") |>
-    dplyr::mutate(
-      series = factor(.data$series, levels = c("Selected donor", other_label))
-    )
+  # ---- Focal donor series ----
+  donor_exists <- donor_name %in% donor_countries_by_year$transaction_provider_org
+  donor_series <- donor_countries_by_year |>
+    dplyr::filter(.data$transaction_provider_org == .env$donor_name)
 
-  # ---- 7) Plot ----
-  col_selected <- "#0072BC"  # blue
-  col_others   <- "#C43C35"  # red
-
-  # ✅ Build named vectors properly (no expressions on LHS of '=')
-  color_values <- c(col_selected, col_others)
-  names(color_values) <- c("Selected donor", other_label)
-
-  linetype_values <- c("solid", "dotdash")
-  names(linetype_values) <- c("Selected donor", other_label)
-
-  # If donor doesn't exist, drop that level from scales & data
   if (!donor_exists) {
-    plot_series <- plot_series |> dplyr::filter(.data$series != "Selected donor") |> droplevels()
-    color_values <- color_values[names(color_values) != "Selected donor"]
-    linetype_values <- linetype_values[names(linetype_values) != "Selected donor"]
+    warning("Donor '", donor_name, "' not found in filtered data. Plot will show benchmarks only.")
   }
 
+  # Labels for donor: per-year #countries (operations)
+  donor_labels_df <- NULL
+  if (donor_exists && nrow(donor_series) > 0) {
+    donor_labels_df <- donor_series |>
+      dplyr::mutate(label_txt = as.character(.data$num_countries))
+  }
+
+  # ---- Benchmarks: Top 5%, Top 10%, Top 50% (per year) ----
+  ranks <- donor_countries_by_year |>
+    dplyr::group_by(.data$year) |>
+    dplyr::arrange(dplyr::desc(.data$total_funding_year), .by_group = TRUE) |>
+    dplyr::mutate(
+      n_donors = dplyr::n(),
+      rank     = dplyr::row_number(),
+      # ensure at least 1 donor per threshold:
+      k5  = pmax(1L, ceiling(0.05 * .data$n_donors)),
+      k10 = pmax(1L, ceiling(0.10 * .data$n_donors)),
+      k50 = pmax(1L, ceiling(0.50 * .data$n_donors)),
+      in_top5  = .data$rank <= .data$k5,
+      in_top10 = .data$rank <= .data$k10,
+      in_top50 = .data$rank <= .data$k50
+    ) |>
+    dplyr::ungroup()
+
+  bench <- ranks |>
+    dplyr::group_by(.data$year) |>
+    dplyr::summarise(
+      Top5  = mean(.data$coverage_pct[.data$in_top5],  na.rm = TRUE),
+      Top10 = mean(.data$coverage_pct[.data$in_top10], na.rm = TRUE),
+      Top50 = mean(.data$coverage_pct[.data$in_top50], na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    tidyr::pivot_longer(cols = c("Top5", "Top10", "Top50"),
+                        names_to = "benchmark", values_to = "coverage_pct") |>
+    dplyr::mutate(
+      benchmark = factor(.data$benchmark, levels = c("Top50", "Top10", "Top5"))
+    )
+
+  # ---- Aesthetics ----
+  col_donor <- "#0072BC"   # UNHCR blue
+  col_top50 <- "#9E9E9E"   # darker grey
+  col_top10 <- "#BDBDBD"   # medium grey
+  col_top5  <- "#D9D9D9"   # lighter grey
+
+  lty_top50 <- "dashed"
+  lty_top10 <- "dotdash"
+  lty_top5  <- "twodash"
+
+  # ---- Titles ----
+  year_range <- if (!is.null(start_year) && !is.null(end_year)) {
+    paste0(start_year, "–", end_year)
+  } else if (!is.null(start_year)) {
+    paste0("from ", start_year)
+  } else if (!is.null(end_year)) {
+    paste0("through ", end_year)
+  } else {
+    "over time"
+  }
+
+  title_txt <- paste0("Activity Diversification for ", donor_name, " | ", year_range)
+  subtitle_txt <- paste(
+    "Donor’s % of UNHCR operations covered / Average coverage for Top 5%, Top 10%, and Top 50% donors (ranked by annual funding)"
+  )
+
+  # ---- Plot ----
   p <- ggplot2::ggplot() +
-    ggplot2::geom_line(
-      data = plot_series,
-      ggplot2::aes(x = .data$year, y = .data$num_countries, color = .data$series, linetype = .data$series),
-      linewidth = 1
+    # Benchmarks (three straight lines, no points)
+    ggplot2::geom_smooth(
+      data = bench,
+      ggplot2::aes(x = .data$year, y = .data$coverage_pct,
+                   color = .data$benchmark, linetype = .data$benchmark),
+      method = "loess", se = FALSE, span = loess_span,
+      linewidth = 1.1
     ) +
-    ggplot2::geom_line(
-      data = avg_all,
-      ggplot2::aes(x = .data$year, y = .data$average_countries_all),
-      color = "black",
-      linetype = "dashed",
-      linewidth = 0.8,
-      alpha = 0.6
+    # Donor LOESS (replaces donor geom_line)
+    { if (donor_exists)
+        ggplot2::geom_smooth(
+          data = donor_series,
+          ggplot2::aes(x = .data$year, y = .data$coverage_pct),
+          method = "loess", se = FALSE, span = loess_span,
+          color = col_donor, linewidth = 1.8
+        )
+      else ggplot2::geom_blank() } +
+    # Donor points
+    { if (donor_exists)
+        ggplot2::geom_point(
+          data = donor_series,
+          ggplot2::aes(x = .data$year, y = .data$coverage_pct),
+          color = col_donor, size = 4.3, stroke = 0
+        )
+      else ggplot2::geom_blank() } +
+    # Donor per-year labels: number of countries
+    { if (donor_exists && !is.null(donor_labels_df) && nrow(donor_labels_df) > 0) {
+        if (requireNamespace("ggrepel", quietly = TRUE)) {
+          ggrepel::geom_label_repel(
+            data = donor_labels_df,
+            ggplot2::aes(x = .data$year, y = .data$coverage_pct, label = .data$label_txt),
+            color = col_donor, size = 4.0,
+            direction = "y", max.overlaps = Inf,
+            box.padding = 0.15, point.padding = 0.2,
+            segment.color = col_donor, segment.size = 0.1,
+            nudge_x = 0.01, hjust = 0
+          )
+        } else {
+          ggplot2::geom_text(
+            data = donor_labels_df,
+            ggplot2::aes(x = .data$year, y = .data$coverage_pct, label = .data$label_txt),
+            color = col_donor, size = 3.8, vjust = -0.5
+          )
+        }
+      } else ggplot2::geom_blank() } +
+    ggplot2::scale_color_manual(
+      values = c("Top50" = col_top50, "Top10" = col_top10, "Top5" = col_top5),
+      labels = c("Top50" = "Top 50% donors (avg)",
+                 "Top10" = "Top 10% donors (avg)",
+                 "Top5"  = "Top 5% donors (avg)")
     ) +
-    ggplot2::scale_color_manual(values = color_values, drop = TRUE) +
-    ggplot2::scale_linetype_manual(values = linetype_values, drop = TRUE) +
+    ggplot2::scale_linetype_manual(
+      values = c("Top50" = lty_top50, "Top10" = lty_top10, "Top5" = lty_top5),
+      labels = c("Top50" = "Top 50% donors (avg)",
+                 "Top10" = "Top 10% donors (avg)",
+                 "Top5"  = "Top 5% donors (avg)")
+    ) +
+    ggplot2::scale_y_continuous(
+      labels = scales::percent,
+      limits = c(0, 1),
+      expand = ggplot2::expansion(mult = c(0, 0.05))
+    ) +
+    ggplot2::scale_x_continuous(breaks = scales::pretty_breaks()) +
     ggplot2::labs(
-      title = if (donor_exists) paste0("Geographic Diversification for ", donor_name)
-              else paste0("Geographic Diversification (donor not found: ", donor_name, ")"),
-      subtitle = paste0("Selected donor vs ", other_label, " and overall average (dashed)."),
-      y = "Number of recipient countries",
+      title = title_txt,
+      subtitle = subtitle_txt,
       x = "Year",
-      color = NULL,
-      linetype = NULL,
-      caption = "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
+      y = "% of UNHCR operations (countries) covered",
+      color = NULL, linetype = NULL,
+      caption = "Source: UNHCR IATI — Coverage = (# countries funded by donor) / (total distinct countries funded by any donor in year)."
     ) +
     unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, font_size = 18) +
-    ggplot2::theme(legend.position = "bottom")
+    ggplot2::theme(
+      legend.position = "bottom",
+      legend.box = "horizontal",
+      legend.margin = ggplot2::margin(t = -3)
+    ) +
+    ggplot2::coord_cartesian(clip = "off")
 
-  p
+  # ---- Verbose diagnostics ----
+  if (verbose) {
+    yrs <- range(df$year, na.rm = TRUE)
+    message("Years covered: ", yrs[1], "–", yrs[2])
+    message("Distinct donors in period: ", dplyr::n_distinct(df$transaction_provider_org))
+    message("Distinct countries per year (min–max): ",
+            min(total_countries_by_year$total_countries), "–",
+            max(total_countries_by_year$total_countries))
+  }
+
+  return(p)
 }
 
 ```
 
-```{r example-show_donor_geographic_diversification}
+```{r example-show_donor_activity_diversification, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 8, fig.asp = 0.618, fig.align = "center",  out.width = "90%"}
 # Example usage:
-p_geo_div <- show_donor_geographic_diversification( 
+show_donor_activity_diversification( 
   donor_name = "Private donors", 
    start_year = 2022, 
-   end_year = 2025,
-  other_stat = "mean"
-  )
-print(p_geo_div)
+   end_year = 2025
+)
+
+
 
 ```
 
-```{r tests-show_donor_geographic_diversification}
-test_that("show_donor_geographic_diversification works", {
+```{r tests-show_donor_activity_diversification}
+test_that("show_donor_activity_diversification works", {
   # Test with a specific donor and year range
-  p_geo_div1 <- show_donor_geographic_diversification(
+  p_geo_div1 <- show_donor_activity_diversification(
         donor_name = "Private donors", 
          start_year = 2022, 
-         end_year = 2025,
-        other_stat = "mean"
+         end_year = 2025
   )
   expect_true(ggplot2::is.ggplot(p_geo_div1))
   
@@ -2105,18 +2439,21 @@ test_that("show_donor_geographic_diversification works", {
 #' Creates a volatility view of a donor's incoming commitments:
 #' - Points: transaction-level USD amounts for the selected donor
 #' - Smoothed line: monthly/quarterly mean transaction value (donor)
-#' - Comparator: weighted mean transaction value for all other donors,
+#' - Comparator: weighted mean transaction value for other donors,
 #'   weighted by each donor's total received amount (under the same filters)
 #' - Forecast: simple trend model (lm on log1p period mean) extended forward
 #'
-#' Title/subtitle highlight average amount per transaction and transactions per year
-#' for the donor vs weighted averages for all other donors combined.
+#' Title/subtitle highlight average amount per transaction and average number of 
+#' transactions per year for the donor vs weighted averages for other donors combined.
 #'
 #' @param donor_name Character. The donor to plot.
 #' @param year Optional integer/numeric vector. Filter years (e.g., 2023 or c(2022,2023)).
 #' @param programme_lab Optional character vector. Filter on programme label.
 #' @param iati_identifier_ops Optional character vector. Filter on operation identifier.
 #' @param ctr_name Optional character vector. Filter on recipient country name (ctr_name).
+#' @param top_n_donors Optional integer. If provided, restricts comparator to
+#'   the top N donors by total funding amount (USD) across the filtered period.
+#'   NULL (default) includes all other donors in the comparator.
 #' @param time_unit Aggregation unit for trend line: "month" (default) or "quarter".
 #' @param smooth_method Smoother for trend line: "loess" (default) or "gam".
 #' @param forecast_horizon Integer. Number of periods (months/quarters) to forecast.
@@ -2130,6 +2467,7 @@ show_donor_funding_volatility <- function(donor_name,
                                           programme_lab = NULL,
                                           iati_identifier_ops = NULL,
                                           ctr_name = NULL,
+                                          top_n_donors = NULL,
                                           time_unit = c("month", "quarter"),
                                           smooth_method = c("loess", "gam"),
                                           forecast_horizon = 6,
@@ -2146,7 +2484,6 @@ show_donor_funding_volatility <- function(donor_name,
   # value column (prefer USD)
   value_col <- dplyr::case_when(
     "transaction_value_USD" %in% names(tx) ~ "transaction_value_USD",
-    "transaction_value"     %in% names(tx) ~ "transaction_value",
     TRUE ~ NA_character_
   )
   if (is.na(value_col)) stop("No transaction value column found (`transaction_value_USD` or `transaction_value`).")
@@ -2204,12 +2541,42 @@ show_donor_funding_volatility <- function(donor_name,
   if (nrow(donor_df) == 0) stop("Donor '", donor_name, "' not found under current filters.")
   others_df <- df |> dplyr::filter(.data$transaction_provider_org != donor_name)
 
-  # ---- 4) Define time bucket ----
+  # ---- 4) Apply top_n_donors filter to comparator if specified ----
+  if (!is.null(top_n_donors)) {
+    if (!is.numeric(top_n_donors) || top_n_donors < 1) {
+      stop("top_n_donors must be a positive integer.")
+    }
+    
+    # Calculate total funding per donor across all filtered years
+    other_donor_totals <- others_df |>
+      dplyr::group_by(.data$transaction_provider_org) |>
+      dplyr::summarise(
+        total_funding = sum(.data$tx_value, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      dplyr::arrange(dplyr::desc(.data$total_funding)) |>
+      dplyr::slice(1:top_n_donors)
+    
+    # Keep only top N donors for comparator
+    top_comparator_donors <- other_donor_totals$transaction_provider_org
+    
+    # Filter others_df to include only top donors
+    others_df <- others_df |>
+      dplyr::filter(.data$transaction_provider_org %in% top_comparator_donors)
+    
+    if (verbose) {
+      message("Restricting comparator to top ", top_n_donors, 
+              " other donors by total funding. Comparator donors: ",
+              paste(top_comparator_donors, collapse = ", "))
+    }
+  }
+
+  # ---- 5) Define time bucket ----
   bucket_unit <- if (time_unit == "month") "month" else "quarter"
   donor_df  <- donor_df  |> dplyr::mutate(period = lubridate::floor_date(.data$tx_date, unit = bucket_unit))
   others_df <- others_df |> dplyr::mutate(period = lubridate::floor_date(.data$tx_date, unit = bucket_unit))
 
-  # ---- 5) Donor period summaries ----
+  # ---- 6) Donor period summaries ----
   donor_period <- donor_df |>
     dplyr::group_by(.data$period) |>
     dplyr::summarise(
@@ -2219,34 +2586,45 @@ show_donor_funding_volatility <- function(donor_name,
       .groups = "drop"
     )
 
-  # ---- 6) Weighted "other donors" period mean ----
-  others_totals <- others_df |>
-    dplyr::group_by(.data$transaction_provider_org) |>
-    dplyr::summarise(donor_total_all = sum(.data$tx_value, na.rm = TRUE), .groups = "drop") |>
-    dplyr::filter(.data$donor_total_all > 0) |>
-    dplyr::mutate(weight = .data$donor_total_all / sum(.data$donor_total_all, na.rm = TRUE))
+  # ---- 7) Weighted "other donors" period mean ----
+  # Only calculate if there are other donors to compare with
+  others_period <- NULL
+  others_label <- "Other donors"
+  
+  if (nrow(others_df) > 0) {
+    others_totals <- others_df |>
+      dplyr::group_by(.data$transaction_provider_org) |>
+      dplyr::summarise(donor_total_all = sum(.data$tx_value, na.rm = TRUE), .groups = "drop") |>
+      dplyr::filter(.data$donor_total_all > 0) |>
+      dplyr::mutate(weight = .data$donor_total_all / sum(.data$donor_total_all, na.rm = TRUE))
 
-  others_period_donor <- others_df |>
-    dplyr::group_by(.data$transaction_provider_org, .data$period) |>
-    dplyr::summarise(
-      total = sum(.data$tx_value, na.rm = TRUE),
-      n     = dplyr::n(),
-      mean  = total / n,
-      .groups = "drop"
-    ) |>
-    dplyr::left_join(
-      others_totals |> dplyr::select(transaction_provider_org, weight),
-      by = "transaction_provider_org"
-    )
+    others_period_donor <- others_df |>
+      dplyr::group_by(.data$transaction_provider_org, .data$period) |>
+      dplyr::summarise(
+        total = sum(.data$tx_value, na.rm = TRUE),
+        n     = dplyr::n(),
+        mean  = total / n,
+        .groups = "drop"
+      ) |>
+      dplyr::left_join(
+        others_totals |> dplyr::select(transaction_provider_org, weight),
+        by = "transaction_provider_org"
+      )
 
-  others_period <- others_period_donor |>
-    dplyr::group_by(.data$period) |>
-    dplyr::summarise(
-      others_weighted_mean = sum(.data$mean * .data$weight, na.rm = TRUE),
-      .groups = "drop"
-    )
+    others_period <- others_period_donor |>
+      dplyr::group_by(.data$period) |>
+      dplyr::summarise(
+        others_weighted_mean = sum(.data$mean * .data$weight, na.rm = TRUE),
+        .groups = "drop"
+      )
+    
+    # Update label for comparator
+    if (!is.null(top_n_donors)) {
+      others_label <- paste0("Top ", top_n_donors, " other donors")
+    }
+  }
 
-  # ---- 7) Forecast donor trend (lm on log1p of donor_mean) ----
+  # ---- 8) Forecast donor trend (lm on log1p of donor_mean) ----
   donor_period_model <- donor_period |>
     dplyr::arrange(.data$period) |>
     dplyr::mutate(t = dplyr::row_number())
@@ -2290,45 +2668,68 @@ show_donor_funding_volatility <- function(donor_name,
 
   }
 
-  # ---- 8) KPI text for title/subtitle ----
+  # ---- 9) KPI text for title/subtitle ----
   donor_avg_txn <- mean(donor_df$tx_value, na.rm = TRUE)
   donor_n_txn   <- nrow(donor_df)
   donor_years   <- length(unique(donor_df$year_tx))
   donor_txn_per_year <- donor_n_txn / max(donor_years, 1)
 
-  others_kpi <- others_df |>
-    dplyr::group_by(.data$transaction_provider_org) |>
-    dplyr::summarise(
-      total = sum(.data$tx_value, na.rm = TRUE),
-      n = dplyr::n(),
-      avg_txn = total / n,
-      years = dplyr::n_distinct(.data$year_tx),
-      txn_per_year = n / pmax(years, 1),
-      .groups = "drop"
-    ) |>
-    dplyr::filter(.data$total > 0) |>
-    dplyr::mutate(w = .data$total / sum(.data$total, na.rm = TRUE))
+  # Calculate comparator KPIs if comparator exists
+  others_weighted_avg_txn <- NA
+  others_weighted_txn_per_year <- NA
+  comparator_available <- FALSE
+  
+  if (!is.null(others_period) && nrow(others_df) > 0) {
+    comparator_available <- TRUE
+    
+    # Calculate weighted average transactions per year for other donors
+    others_kpi <- others_df |>
+      dplyr::group_by(.data$transaction_provider_org) |>
+      dplyr::summarise(
+        total = sum(.data$tx_value, na.rm = TRUE),
+        n = dplyr::n(),
+        avg_txn = total / n,
+        years = dplyr::n_distinct(.data$year_tx),
+        txn_per_year = n / pmax(years, 1),
+        .groups = "drop"
+      ) |>
+      dplyr::filter(.data$total > 0) |>
+      dplyr::mutate(w = .data$total / sum(.data$total, na.rm = TRUE))
 
-  others_weighted_avg_txn <- sum(others_kpi$avg_txn * others_kpi$w, na.rm = TRUE)
-  others_weighted_txn_per_year <- sum(others_kpi$txn_per_year * others_kpi$w, na.rm = TRUE)
+    others_weighted_avg_txn <- sum(others_kpi$avg_txn * others_kpi$w, na.rm = TRUE)
+    others_weighted_txn_per_year <- sum(others_kpi$txn_per_year * others_kpi$w, na.rm = TRUE)
+  }
 
   fmt_money <- scales::label_number(scale_cut = scales::cut_short_scale(), accuracy = 0.1)
   fmt_num   <- scales::label_number(accuracy = 0.1)
 
-  title <- paste0("Funding volatility — ", donor_name)
-  subtitle <- paste0(
-    "Donor avg/txn: ", fmt_money(donor_avg_txn), " | txns/yr: ", fmt_num(donor_txn_per_year),
-    "  vs  Other donors (weighted) avg/txn: ", fmt_money(others_weighted_avg_txn),
-    " | txns/yr: ", fmt_num(others_weighted_txn_per_year),
-    if (!is.null(country_filter)) paste0(" | Filter: ", paste(country_filter, collapse = ", ")) else ""
-  )
+  title <- paste0("Funding Volatility for ", donor_name,  " (",
+      fmt_money(donor_avg_txn),  "$ Average Transaction Amount through ", 
+      fmt_num(donor_txn_per_year), " Avg. # of Transactions/Year). ",
+    if (!is.null(country_filter)) paste0("| Commitments to  ", paste(country_filter, collapse = ", ")) else "")
+  
+  # Build subtitle based on comparator availability
+  if (comparator_available) {
+    subtitle <- paste0(
+      fmt_money(donor_avg_txn),  "$ Average Transaction Amount through ", 
+      fmt_num(donor_txn_per_year), " Avg. Transactions per Year  (Benchmark ", 
+      others_label, ":  ", fmt_money(others_weighted_avg_txn),
+      "$ Average Transaction Amount through ", fmt_num(others_weighted_txn_per_year), " Avg. Transactions per Year)"
+    )
+  } else {
+    subtitle <- paste0(
+      fmt_money(donor_avg_txn),  "$ Average Transaction Amount through ", 
+      fmt_num(donor_txn_per_year), " Avg. Transactions per Year  (No comparator data available)"
+    )
+  }
 
-  # ---- 9) Plot ----
+  # ---- 10) Plot ----
   col_donor    <- "#0072BC"
   col_others   <- "#6B6E70"
   col_forecast <- "#F28E2B"
 
   p <- ggplot2::ggplot() +
+    # Selected donor: individual transaction points
     ggplot2::geom_point(
       data = donor_df,
       ggplot2::aes(x = .data$tx_date, y = .data$tx_value),
@@ -2336,12 +2737,14 @@ show_donor_funding_volatility <- function(donor_name,
       alpha = 0.25,
       size = 1.5
     ) +
+    # Selected donor: period mean line
     ggplot2::geom_line(
       data = donor_period,
       ggplot2::aes(x = .data$period, y = .data$donor_mean),
       color = col_donor,
       linewidth = 1
     ) +
+    # Selected donor: smoothed trend line
     ggplot2::geom_smooth(
       data = donor_period,
       ggplot2::aes(x = .data$period, y = .data$donor_mean),
@@ -2353,13 +2756,16 @@ show_donor_funding_volatility <- function(donor_name,
       linetype = "solid",
       alpha = 0.15
     ) +
-    ggplot2::geom_line(
-      data = others_period,
-      ggplot2::aes(x = .data$period, y = .data$others_weighted_mean),
-      color = col_others,
-      linewidth = 1,
-      linetype = "dotdash"
-    ) +
+    # Other donors: weighted mean trend line (NO individual points)
+    { if (!is.null(others_period) && nrow(others_period) > 0)
+      ggplot2::geom_line(
+        data = others_period,
+        ggplot2::aes(x = .data$period, y = .data$others_weighted_mean),
+        color = col_others,
+        linewidth = 1,
+        linetype = "dotdash"
+      )
+    } +
     { if (!is.null(forecast_df) && show_forecast_ci)
       ggplot2::geom_ribbon(
         data = forecast_df,
@@ -2384,9 +2790,10 @@ show_donor_funding_volatility <- function(donor_name,
       x = "Transaction date",
       y = "Transaction value (USD)",
       caption = paste0(
-        "Points: donor transactions. Blue: donor period mean (", time_unit,
-        "). Grey: weighted other donors mean. Dashed orange: simple trend forecast. \n",
-        "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
+        "Blue points: donor transactions. Blue line: donor period mean (", time_unit,
+        "). Grey dashed line: weighted ", tolower(others_label), " mean. ",
+        if (!is.null(forecast_df)) "Dashed orange: simple trend forecast. " else "",
+        "\nSource: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
       )     
     ) +
     unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = "X", font_size = 18)
@@ -2395,13 +2802,13 @@ show_donor_funding_volatility <- function(donor_name,
     message(
       "Volatility plot prepared for donor: ", donor_name,
       " | periods: ", nrow(donor_period),
+      " | comparator: ", ifelse(is.null(others_period) || nrow(others_period) == 0, "none", others_label),
       " | forecast: ", ifelse(is.null(forecast_df), "none", paste0(nrow(forecast_df), " periods"))
     )
   }
 
   p
 }
-
 ```
 
 ```{r example-show_donor_funding_volatility, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 8, fig.asp = 0.618, fig.align = "center",  out.width = "90%"}
@@ -2413,15 +2820,538 @@ show_donor_funding_volatility(
   forecast_horizon = 8
 )
 
+show_donor_funding_volatility(
+  donor_name = "Private donors",
+  year = 2022:2026,
+  top_n_donors = 10,,
+  forecast_horizon = 8,
+  time_unit = "month"
+)
+
 show_donor_funding_volatility(donor_name = "Private donors", 
                               ctr_name = "Brazil")
 ```
+
   
 ```{r tests-show_donor_funding_volatility}
 test_that("show_donor_funding_volatility works", {
   expect_true(inherits(show_donor_funding_volatility, "function")) 
 })
+```  
+
+## plot_donor_regional_focus_treemap
+
+```{r function-plot_donor_regional_focus_treemap}
+#' Plot donor regional and programme focus as a treemap
+#'
+#' @description
+#' This function generates a treemap visualization showing a donor's funding
+#' allocation across UNHCR regions and within those regions, by programme.
+#' The size of each treemap tile can represent either the absolute funding
+#' amount or the share of the donor's total funding for that programme within a region.
+#'
+#' @param donor_name Character. The name of the donor to analyze.
+#' @param year Numeric or integer vector. Year(s) to filter the data.
+#' @param measure_type Character. One of "total_amount_usd" (default) or "share".
+#'   - "total_amount_usd": Tile size represents the absolute USD amount.
+#'   - "share": Tile size represents the share of the donor's total funding
+#'     that goes to a specific programme within a specific UNHCR region.
+#' @param label_font_size Numeric. Base font size for treemap labels.
+#'
+#' @return A ggplot object representing the treemap.
+#' @import ggplot2
+#' @import dplyr
+#' @import scales
+#' @import treemapify
+#' @import unhcrthemes
+#'
+#' @export
+plot_donor_regional_focus_treemap <- function(donor_name,
+                                              year = NULL,
+                                              label_font_size = 4) {
+
+  # ---- 0) Basic checks ----
+  if (!is.numeric(label_font_size) || length(label_font_size) != 1 || label_font_size < 1) {
+    stop("`label_font_size` must be a single numeric value >= 1.")
+  }
+
+  # ---- 1) Get IATI data ----
+  df <- iati::dataTransaction |>
+    dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
+    dplyr::filter(
+      .data$transaction_type_name == "Incoming Commitment"
+    )
+
+  # Filtering by year
+  if (!is.null(year)) {
+    df <- df |> dplyr::filter(.data$year %in% .env$year)
+  }
+
+  if (nrow(df) == 0) {
+    stop("No data found for the selected donor and year(s).")
+  }
+  
+  # Ensure necessary columns are not NA
+  df <- df |>
+    dplyr::filter(!is.na(.data$unhcr_region2), !is.na(.data$activity_name), !is.na(.data$transaction_value_USD))
+
+  if (nrow(df) == 0) {
+    stop("No data remaining after filtering out NA values for region, programme, or funding.")
+  }
+
+  # ---- 2) Aggregate data for treemap ----
+  treemap_data <- df |>
+    dplyr::group_by(.data$unhcr_region2, .data$activity_name) |>
+    dplyr::summarise(
+      total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+      ## total funded by the donor - ,   .data$transaction_provider_org == donor_name
+      
+      .groups = "drop"
+    ) |>
+    dplyr::ungroup() |> 
+    dplyr::left_join(
+      df |>
+        dplyr::filter( transaction_provider_org == donor_name) |>
+        dplyr::group_by(activity_name) |>
+        dplyr::summarise(
+            total_funding_donor = sum(.data$transaction_value_USD, na.rm = TRUE),
+      .groups = "drop")|>    dplyr::ungroup(),
+    by= c("activity_name")) |>
+    dplyr::mutate( 
+      share = total_funding_donor/ total_funding  ,
+      label_text =  paste0(.data$activity_name, " - ", 
+                           scales::label_number(accuracy = 0.1, scale_cut = scales::cut_short_scale())(.data$total_funding_donor), 
+                           "$ (",
+                           scales::label_percent(accuracy = 0.1)(.data$share), 
+                           ")"))|>
+    dplyr::filter( !(is.na(total_funding_donor))  )
+  
+  # Calculate overall donor total for 'share' measure type
+  donor_total_overall <- sum(treemap_data$total_funding_donor, na.rm = TRUE)
+
+
+
+  if (nrow(treemap_data) == 0) {
+    stop("No valid funding data to plot after aggregation and filtering for value_to_map.")
+  }
+  
+  # Define colors for regions (first level of treemap)
+  region_colors <- unhcrthemes::unhcr_pal(n = length(unique(treemap_data$unhcr_region2)), name = "pal_unhcr")
+  
+  # ---- 3) Plotting ----
+  p <- ggplot2::ggplot(treemap_data,
+                        ggplot2::aes(area = .data$total_funding_donor,
+                                     fill = .data$unhcr_region2,
+                                     subgroup = .data$unhcr_region2,
+                                     label = .data$label_text)) +
+    treemapify::geom_treemap() +
+    treemapify::geom_treemap_subgroup_border(colour = "white", size = 3) +
+    treemapify::geom_treemap_subgroup_text(place = "centre", grow = TRUE,
+                                           alpha = 0.5, colour = "black",
+                                           fontface = "bold", min.size = 0) +
+    treemapify::geom_treemap_text(
+      colour = "white",
+      place = "centre",
+      size = label_font_size,
+      family = "Lato",
+      grow = TRUE
+    ) +
+    ggplot2::scale_fill_manual(values = region_colors) +
+    unhcrthemes::theme_unhcr(font_size = 14) +
+    ggplot2::theme(legend.position = "none") +
+    ggplot2::labs(
+      title = paste("Donor Portfolio : ", donor_name, " (", paste(range(year), collapse = "-"), ")"),
+      subtitle = paste("Includes Total Funding (Share of Donor's Funding within this activity) "),
+      caption = "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
+    )
+
+  return(p)
+}
 ```
+
+```{r example-plot_donor_regional_focus_treemap, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 10, fig.asp = 0.7, fig.align = "center", out.width = "90%"}
+# Example usage:
+plot_donor_regional_focus_treemap(
+  donor_name = "Private donors",
+  year = c(2023, 2024, 2025),
+  label_font_size = 3
+)
+
+plot_donor_regional_focus_treemap(
+  donor_name = "Private donors",
+  year = 2025,
+  label_font_size = 5
+)
+```
+
+```{r tests-plot_donor_regional_focus_treemap}
+test_that("plot_donor_regional_focus_treemap works", {
+  # Test with a specific donor and year, checking for ggplot object
+  p_treemap <- plot_donor_regional_focus_treemap(
+    donor_name = "Private donors",
+    year = c(2023, 2024, 2025),
+    label_font_size = 3
+  )
+  expect_true(ggplot2::is.ggplot(p_treemap))
+  
+})
+```
+
+
+## plot_donor_location_map
+
+```{r function-plot_donor_location_map}
+#' Plot donor funding on a world map with proportional symbols
+#'
+#' @description
+#' This function generates a world map showing funding locations for a given donor
+#' and year(s). It uses proportional symbols where a white outer circle represents
+#' the total funding from all donors at a location, and an inner UNHCR blue circle
+#' represents the specific donor's funding at that location. The visual difference
+#' between the two circles provides insight into the donor's contribution share.
+#' Top locations by donor funding are highlighted with ggrepel labels.
+#' The map uses a Bertin 1951-like projection (Equal Earth) for good world generalization.
+#'
+#' @param donor_name Character. The name of the donor to filter by.
+#' @param year Numeric or integer vector. Year(s) to filter the transaction data.
+#' @param top_n_locations Integer. Number of top locations (by donor funding)
+#'   to label using `ggrepel`. Defaults to 5.
+#' @param max_symbol_size Numeric. Maximum size for the proportional symbols.
+#'   Adjust based on data range and desired visual effect. Defaults to 15.
+#'
+#' @return A ggplot object representing the world map.
+#' @import ggplot2
+#' @import dplyr
+#' @import sf
+#' @import rnaturalearth
+#' @import rnaturalearthdata
+#' @import ggrepel
+#' @import scales
+#' @import unhcrthemes
+#'
+#' @export
+plot_donor_location_map <- function(donor_name,
+                                    year = NULL,
+                                    top_n_locations = 5,
+                                    max_symbol_size = 15) {
+
+  # ---- 0) Basic checks ----
+  if (!is.numeric(top_n_locations) || length(top_n_locations) != 1 || top_n_locations < 0) {
+    stop("`top_n_locations` must be a single non-negative integer.")
+  }
+  if (!is.numeric(max_symbol_size) || length(max_symbol_size) != 1 || max_symbol_size <= 0) {
+    stop("`max_symbol_size` must be a single positive numeric value.")
+  }
+
+  # ---- 1) Load map data ----
+  # Using Bertin
+  target_crs <- "+proj=bertin1953" 
+  
+  world_sf <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") |>
+    dplyr::filter( !(admin == "Antarctica")) |>
+    sf::st_transform(crs = target_crs)
+
+  # ---- 2) Prepare IATI data ----
+  # Filter transactions for the specified donor and year(s)
+  filtered_transactions <- iati::dataTransaction |>
+    dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
+    dplyr::filter(
+      .data$transaction_type_name == "Incoming Commitment",
+      .data$transaction_provider_org == donor_name
+    ) 
+
+  if (!is.null(year)) {
+    filtered_transactions <- filtered_transactions |> dplyr::filter(.data$year %in% .env$year)
+  }
+
+  if (nrow(filtered_transactions) == 0) {
+    stop("No transaction data found for the specified donor and year(s).")
+  }
+  
+  # Get all transactions for total funding calculation at locations
+  all_transactions <- iati::dataTransaction |>
+    dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
+    dplyr::filter(
+      .data$transaction_type_name == "Incoming Commitment",
+      .data$transaction_provider_org == donor_name
+    ) 
+  
+  if (!is.null(year)) {
+    all_transactions <- all_transactions |> dplyr::filter(.data$year %in% .env$year)
+  }
+
+  # Join with location data and aggregate funding using iati_identifier
+  # location_type = c("UNHCR Headquarters", "UNHCR Regional Bureau", 
+  # "UNHCR Country Office", "UNHCR Chargé de Mission", "UNHCR Multi-country Office", 
+  # "UNHCR National Office", "UNHCR Field Office", "UNHCR Field Unit", 
+  # "UNHCR Sub-Office", "UNHCR Regional Office", "UNHCR Liaison Office", 
+  # "UNHCR Deputy Director Office", "UNHCR Branch Office", "UNHCR Multi-Country Office", 
+  # "Global Hub / Service Center", "UNHCR Office of Special Coordinator", 
+  # "UNHCR Planned Office")
+
+  mainLocation <- iati::dataLocation |> 
+    # Group and collapse multiple values
+    dplyr::group_by(iati_identifier, location_type) |> 
+    dplyr::summarize(
+      location_ref = paste(unique(location_ref), collapse = "; "),
+      .groups = "drop"
+    ) |> 
+    
+    # Then pivot
+    tidyr::pivot_wider(
+      id_cols = iati_identifier,
+      names_from = location_type,
+      values_from = location_ref
+    ) |> 
+    janitor::clean_names() |>
+    
+    # Apply business logic - extract first value if there are multiple
+    dplyr::mutate(
+      across(where(is.character), 
+             ~ifelse(is.na(.) | . == "", NA_character_, .)) ) |>
+    
+    dplyr::mutate(
+      main_location_ref = dplyr::case_when(
+        # Extract first HQ if exists
+        !is.na(unhcr_headquarters)  ~ "CHEP000332",
+        
+        # Extract first bureau if exists
+        !is.na(unhcr_regional_bureau)  ~ unhcr_regional_bureau,
+        
+        ## Regional bureau
+        is.na(unhcr_headquarters) & 
+          is.na(unhcr_regional_bureau) &
+          is.na(unhcr_country_office) &
+          is.na(unhcr_regional_bureau)  &
+        !is.na(unhcr_regional_office)  ~ unhcr_regional_office,
+        
+        # Extract first MCO if exists
+        !is.na(unhcr_multi_country_office)  ~ unhcr_multi_country_office,
+        
+        ## Branch office
+        is.na(unhcr_headquarters) & 
+          is.na(unhcr_regional_bureau) &
+          is.na(unhcr_country_office) &
+          is.na(unhcr_national_office) &
+          !is.na(unhcr_branch_office)  ~ unhcr_branch_office,
+        
+        ## National office
+        is.na(unhcr_headquarters) & 
+          is.na(unhcr_regional_bureau) &
+          is.na(unhcr_country_office) &
+          is.na(unhcr_branch_office) &
+          !is.na(unhcr_national_office)  ~ unhcr_national_office,
+        
+        ## Liaison office
+        is.na(unhcr_headquarters) & 
+          is.na(unhcr_regional_bureau) &
+          is.na(unhcr_country_office) &
+          is.na(unhcr_branch_office) &
+          is.na(unhcr_national_office)&
+          !is.na(unhcr_liaison_office)   ~ unhcr_liaison_office,
+        
+        ## Charge mission
+        is.na(unhcr_headquarters) & 
+          is.na(unhcr_regional_bureau) &
+          is.na(unhcr_country_office) &
+          is.na(unhcr_branch_office) &
+          is.na(unhcr_national_office) &
+          is.na(unhcr_liaison_office)  &
+          !is.na(unhcr_charge_de_mission)   ~ unhcr_charge_de_mission,
+        
+        # Default to first country office
+        .default = unhcr_country_office
+      )
+    ) |>
+    ## Manual clean
+    dplyr::mutate(
+      main_location_ref = dplyr::case_when(
+        main_location_ref == "AGOp000019; MOZp000256"  ~ "MOZp000256",
+        main_location_ref == "MWIp000238; ZMBp000385" ~ "ZMBp000385", 
+        main_location_ref == "ZWEp000389; MWIp000238; ZMBp000385" ~ "ZMBp000385", 
+        main_location_ref == "CZEP000102; POLP000277" ~ "POLP000277",
+        main_location_ref == "BLRP000035; RUSp000290" ~ "RUSp000290",
+        main_location_ref == "MDAP000254; BLRP000035" ~ "HUNP000749",
+        # Default  
+        .default = main_location_ref
+      )
+    ) |> 
+    select(main_location_ref, iati_identifier) |>
+      dplyr::left_join(iati::dataLocation |>  
+                         dplyr::select( location_ref, 
+                                        location_lat, location_long ) |> 
+                         distinct() ,
+                    ## retain a single location per activity_name aka the office the most important   
+                    by = c( "main_location_ref" = "location_ref") ) |>
+    dplyr::rename("lat"="location_lat", "lon"="location_long")
+  
+  # Aggregate all donor funding per location
+  all_donor_locations_funding <- all_transactions |>
+    dplyr::left_join(mainLocation |> 
+                       dplyr::select(main_location_ref, iati_identifier), by = "iati_identifier") |>
+    dplyr::filter( !is.na(.data$transaction_value_USD)) |>
+    dplyr::filter(! is.na(main_location_ref)) |>
+    dplyr::group_by(.data$main_location_ref) |>
+    dplyr::summarise(
+      total_funding_all_donors = sum(.data$transaction_value_USD, na.rm = TRUE),
+      .groups = "drop"
+    )  
+   # sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) # WGS 84
+  
+  # Aggregate specific donor funding per location
+  donor_locations_funding <- filtered_transactions |>
+    dplyr::left_join(mainLocation |>
+                       dplyr::select(main_location_ref, iati_identifier), by = "iati_identifier") |>
+    dplyr::filter( !is.na(.data$transaction_value_USD)) |>
+    dplyr::group_by(.data$main_location_ref) |>
+    dplyr::summarise(
+      total_funding_donor = sum(.data$transaction_value_USD, na.rm = TRUE),
+      .groups = "drop"
+    )  
+
+  if (nrow(donor_locations_funding) == 0) {
+    stop("No valid location data with coordinates and funding found for the specified donor.")
+  }
+
+  # Join aggregated data
+  map_data <- all_donor_locations_funding |>
+    dplyr::full_join(
+      donor_locations_funding, #|> sf::st_drop_geometry(), # drop geometry to avoid join issues, re-add later
+      by = c( "main_location_ref")
+    ) |>
+    dplyr::left_join(mainLocation |>
+                       dplyr::select(main_location_ref, lat, lon) |>
+                       unique(), by = "main_location_ref") |>
+    dplyr::filter(! (is.na(main_location_ref))) |>
+     sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) |> # WGS 84
+    dplyr::mutate(
+      total_funding_donor = tidyr::replace_na(.data$total_funding_donor, 0),
+      # Add geometry back from all_donor_locations_funding
+      geometry = .data$geometry # This ensures sf object maintains its geometry
+    ) |>
+    # Transform to target CRS after full_join
+    sf::st_transform(crs = target_crs)
+
+  # Filter out locations with no funding from either (after joins and NA replacements)
+  map_data <- map_data |>
+    dplyr::filter(.data$total_funding_all_donors > 0 | .data$total_funding_donor > 0)
+  
+  if (nrow(map_data) == 0) {
+    stop("No locations with funding data after joining and filtering.")
+  }
+
+  # Identify top locations for labeling
+  top_locations_labels <- map_data |>
+    dplyr::arrange(dplyr::desc(.data$total_funding_donor)) |>
+    dplyr::slice_head(n = top_n_locations) |>
+    dplyr::mutate(
+      label = paste0( "", scales::label_number(
+    scale_cut = scales::cut_short_scale(), accuracy = 0.1)(total_funding_donor) , "")
+    )
+
+  # ---- 3) Define colors and sizes ----
+  ocean_color <- "#E0F2F7" # Light blue
+  country_fill_color <- "#D3D3D3" # Elegant gray
+  country_border_color <- "#F0F0F0" # Very light white
+  
+  donor_color <- "#0072BC"
+  all_donors_color <- "white"
+
+  # ---- 4) Plotting ----
+  p <- ggplot2::ggplot() +
+    # Ocean background
+    ggplot2::geom_sf(data = world_sf, fill = ocean_color, color = NA) + # Draw entire world as ocean
+    
+    # Countries
+    ggplot2::geom_sf(data = world_sf, fill = country_fill_color, color = country_border_color, linewidth = 0.1) +
+    
+    # Proportional symbols for ALL donor funding (background circles)
+    ggplot2::geom_sf(
+      data = map_data |> dplyr::filter(.data$total_funding_all_donors > 0),
+      ggplot2::aes(size = .data$total_funding_all_donors),
+      shape = 21, fill = all_donors_color, color = "black", stroke = 0.5,
+      alpha = 0.7,
+      show.legend = "point"
+    ) +
+    
+    # Proportional symbols for specific donor funding (foreground circles)
+    ggplot2::geom_sf(
+      data = map_data |> dplyr::filter(.data$total_funding_donor > 0),
+      ggplot2::aes(size = .data$total_funding_donor),
+      shape = 21, fill = donor_color, color = donor_color, stroke = 0.5,
+      alpha = 0.8,
+      show.legend = "point"
+    ) +
+    
+    # Scale for proportional symbol sizes
+    ggplot2::scale_size_continuous(
+      name = "Funding (USD)",
+      range = c(1, max_symbol_size) 
+    ) +
+    
+    # Labels for top locations
+    ggrepel::geom_label_repel(
+      data = top_locations_labels,
+      ggplot2::aes(label = .data$label, geometry = .data$geometry),
+      stat = "sf_coordinates",
+      min.segment.length = 0,
+      box.padding = 0.5,
+      point.padding = 0.5,
+      force = 1,
+      size = 7,
+      direction = "both",
+      bg.color = "white",
+      bg.r = 0.1,
+      color = "black"
+    ) +
+    
+    unhcrthemes::theme_unhcr(font_size = 26) +
+    ggplot2::theme(
+      panel.background = ggplot2::element_rect(fill = ocean_color, color = NA),
+      plot.background = ggplot2::element_rect(fill = ocean_color, color = NA),
+      axis.title = ggplot2::element_blank(),
+      axis.text = ggplot2::element_blank(),
+      axis.ticks = ggplot2::element_blank(),
+      legend.position = "bottom",
+      panel.grid.major = ggplot2::element_line(color = "transparent") # Remove grid lines
+    ) +
+    ggplot2::labs(
+      title = paste("Donor Geographic Focus for ", donor_name),
+      subtitle = paste("Funding Activities Main Locations (", paste(range(year), collapse = "-"), ")"),
+      caption = paste0(
+        "White circle: Total funding from all donors. UNHCR blue circle: Funding from ", donor_name, ".\n",
+        "Size indicates amount. Difference in circle size shows donor's share.\n",
+        "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
+      )
+    )
+
+  return(p)
+}
+```
+
+```{r example-plot_donor_location_map, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 12, fig.asp = 0.6, fig.align = "center", out.width = "90%"}
+# Example usage:
+plot_donor_location_map(
+  donor_name = "Private donors",
+  year = 2025,
+  top_n_locations = 5,
+  max_symbol_size = 20
+)
+```
+
+```{r tests-plot_donor_location_map}
+test_that("plot_donor_location_map works", {
+  # Test with a specific donor and year, checking for ggplot object
+  p_map <- plot_donor_location_map(
+    donor_name = "Private donors",
+    year = 2025,
+    top_n_locations = 1
+  )
+  expect_true(ggplot2::is.ggplot(p_map))
+})
+```
+
+
 
 
 ```{r development-inflate, eval=FALSE}
@@ -2439,6 +3369,3 @@ test_that("show_donor_funding_volatility works", {
 # Execute in the console directly
 fusen::inflate(flat_file = "dev/dev_donor_focus.Rmd", clean=TRUE, vignette_name = "-- Donor Analysis")
 ```
-
-
-

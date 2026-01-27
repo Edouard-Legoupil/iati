@@ -27,6 +27,6 @@ a graph
 Show resource allocation in line with SDG goal
 }
 \examples{
-show_goal_sdg(year =  c(  2020, 2021, 2022), 
+show_goal_sdg(year =  c(2022, 2023, 20024, 2025), 
              ctr_name = "Brazil")
 }

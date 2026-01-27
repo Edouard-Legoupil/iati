@@ -46,16 +46,16 @@ a graph
 show_outcome_result
 }
 \examples{
-show_outcome_result(year =  c(  2020, 2021, 2022), 
+show_outcome_result(year =  c(2022, 2023, 20024, 2025), 
              ctr_name = "Brazil",
              outcome = "OA2: Status Determination")
-show_outcome_result(year =  c(  2020, 2021, 2022), 
+show_outcome_result(year =  c(2022, 2023, 20024, 2025), 
              ctr_name = "Brazil",
              outcome = "OA9: Sustainable Housing and Settlements")
-show_outcome_result(year =  c(  2020, 2021, 2022), 
+show_outcome_result(year =  c(2022, 2023, 20024, 2025), 
              ctr_name = "Brazil",
              outcome = "OA8: Well-Being and Basic Needs")
-show_outcome_result(year =  c(  2020, 2021, 2022), 
+show_outcome_result(year =  c(2022, 2023, 20024, 2025), 
              ctr_name = "Brazil",
              outcome = "OA4: Sexual and Gender-based Violence")
 }

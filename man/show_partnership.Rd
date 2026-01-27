@@ -27,6 +27,6 @@ a graph
 How organisations partner together?
 }
 \examples{
-show_partnership(year = 2022,
+show_partnership(year = 2025,
            ctr_name = "Brazil" ) 
 }

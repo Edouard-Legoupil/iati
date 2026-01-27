@@ -209,7 +209,17 @@ extract_structure <- function(p) {
 ```
 
 ```{r example-extract_structure}
- 
+ library(ggplot2)
+p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point() +
+  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE) +
+  labs(
+    title = "Vehicle Efficiency",
+    subtitle = "Fuel consumption vs weight",
+    caption = "Source: mtcars dataset"
+  )
+
+extract_structure(p)
 ```
 
 ```{r tests-extract_structure}
@@ -310,6 +320,7 @@ profile_data <- function(p) {
 ```
 
 ```{r example-profile_data}
+library(ggplot2)
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
   unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE) +
@@ -364,63 +375,85 @@ generate_description <- function(structure,
       return(list(short_desc = "", long_desc = ""))
   }
 
-  # Construct Context
-  context_str <- paste0(
-    "PLOT METADATA:\n",
-    "Title: ", structure$labels$title, "\n",
-    "Subtitle: ", structure$labels$subtitle, "\n",
-    "Geoms: ", paste(unique(structure$geoms), collapse = ", "), "\n",
-    "X Label: ", structure$labels$x, "\n",
-    "Y Label: ", structure$labels$y, "\n\n",
-
-    "STATISTICAL PROFILE:\n",
-    "Distributions:\n",
-    paste(capture.output(print(stats$distributions)), collapse = "\n"), "\n",
-    "Correlations: ",
-    paste(names(stats$correlations), unlist(stats$correlations),
-          sep = ": ", collapse = ", "),
-    "\n"
-  )
-
-
-  # ---- prompts with explicit hard limits -----------------------------------
-  # We instruct the model to strictly respect the per-field token budgets
-  system_prompt <- paste0(
-    "You are a Senior Humanitarian Data Storyteller for UNHCR. ",
-    "Your goal is to influence decision-makers by turning data into a 'Cause and Effect' narrative.\n\n",
-    "Your role is to: \n",
-    "1. Extract, from a given dataset and its visualization parameters, key operational and fund raising insights with quotable and specific data points \n",
-    "2. Create compelling, accessible narratives tailored for a humanitarian proposal writer audience \n",
-    "3. Highlight patterns, trends, and implications to consider when looking for funding opportunities and designing new proposals or evaluation studies \n",
-    "4. Adapt interpretation depth based on available data and context \n",
-    "5. Use clear, plain, WCAG-compliant language with appropriate practical recommendations \n\n",
-    
-    "CRITICAL INSTRUCTIONS:\n",
-    "- DO NOT include any thinking tags like <think> or </think> in your response\n",
-    "- DO NOT use markdown formatting, asterisks, or special characters\n",
-    "- Provide ONLY the final narrative text\n",
-    "- Your response should be clean plain text ready for display\n\n",
-    "Your task is to generate two outputs for a given data visualization:\n",
-    "1) 'short_desc': A WCAG-compliant alt text following the formula ",
-    "'[Chart Type] of [Variables], where [Trend/Key Insight]'.\n",
-    "2) 'long_desc': A detailed statistical analysis and context description.\n\n",
-    "HARD LIMITS (must not be exceeded):\n",
-    "- short_desc: <= ", max_tokens_short_desc, " tokens.\n",
-    "- long_desc:  <= ", max_tokens_long_desc,  " tokens.\n",
-    "Tokens are defined approximately as whitespace-delimited units. ",
-    "If in doubt, be shorter. Do not include metadata or explanations.\n\n",
-    "OUTPUT FORMAT (STRICT):\n",
-    "- Return a single JSON object with keys 'short_desc' and 'long_desc'.\n",
-    "- Do NOT wrap the JSON in markdown code fences.\n",
-    "- Do NOT include any additional text before or after the JSON."
-  )
-
-  prompt <- paste0(
-    "Context:\n", context_str, "\n\n",
-    "Task: Produce the JSON object with 'short_desc' and 'long_desc' ",
-    "respecting the hard token limits above."
-  )
   
+  # Construct Context
+context_str <- paste0(
+  "PLOT METADATA:\n",
+  "Title: ", structure$labels$title, "\n",
+  "Subtitle: ", structure$labels$subtitle, "\n",
+  "Chart Type: ", paste(unique(structure$geoms), collapse = ", "), "\n",
+  "X Variable: ", structure$labels$x, "\n",
+  "Y Variable: ", structure$labels$y, "\n\n",
+  
+  "EXECUTIVE-RELEVANT STATISTICAL PROFILE:\n",
+  "Key Patterns & Trends:\n",
+  paste(capture.output(print(stats$distributions)), collapse = "\n"), "\n",
+  "Strategic Relationships: ",
+  paste(names(stats$correlations), 
+        sapply(unlist(stats$correlations), function(x) {
+          if(abs(x) > 0.7) "Strong" else if(abs(x) > 0.4) "Moderate" else "Weak"
+        }),
+        sep = ": ", collapse = ", "),
+  "\n"
+)
+  
+# ---- Revised prompts for executive impact -----------------------------------
+system_prompt <- paste0(
+  "You are the Chief Data Storyteller for UNHCR, crafting narratives that mobilize resources and influence strategic decisions. ",
+  "Your audience: Senior executives and expert fundraisers who need compelling, evidence-based narratives for donor engagement.\n\n",
+  
+  "YOUR MANDATE:\n",
+  "1. EXTRACT ACTIONABLE INSIGHTS: Identify data points with fundraising implications (funding gaps, success factors, ROI indicators)\n",
+  "2. CRAFT INVESTMENT NARRATIVES: Frame findings as opportunities for donor investment with clear impact pathways\n",
+  "3. HIGHLIGHT STRATEGIC LEVERS: Identify what variables decision-makers can influence for maximum effect\n",
+  "4. PRIORITIZE EXECUTIVE RELEVANCE: Focus on implications for resource allocation, partnership strategy, and risk management\n",
+  "5. MAINTAIN CREDIBILITY WITH NUANCE: Balance compelling storytelling with appropriate statistical caveats\n\n",
+  
+  "NARRATIVE REQUIREMENTS:\n",
+  "- SHORT_DESC: Opening hook that grabs attention in donor meetings or executive summaries\n",
+  "- LONG_DESC: Convincing case-building narrative structured as: Situation → Complication → Implication → Action\n",
+  "- Use power language: 'investment,' 'leverage,' 'scale,' 'impact multiplier,' 'strategic priority'\n",
+  "- Reference specific data points as evidence for claims\n",
+  "- Connect findings to donor priorities (emergency response, resilience, innovation, accountability)\n\n",
+  
+  "CRITICAL FORMATTING RULES:\n",
+  "- ABSOLUTELY NO markdown, asterisks, or thinking tags\n",
+  "- Clean plain text only, ready for executive presentations\n",
+  "- Write in active voice with confident tone\n",
+  "- Quantify impacts where possible (e.g., 'A 10% increase in X correlates with 15% improvement in Y')\n\n",
+  
+  "OUTPUT STRUCTURE:\n",
+  "1) 'short_desc': Maximum-impact opening statement (", max_tokens_short_desc, " token limit)\n",
+  "   Formula: '[Chart type] revealing [key strategic insight] with [quantified impact] implications for [specific donor/operational priority]'\n",
+  "2) 'long_desc': Persuasive narrative for resource mobilization (", max_tokens_long_desc, " token limit)\n",
+  "   Structure:\n",
+  "   - Opening attention-grabber\n",
+  "   - 2-3 key data-backed insights with fundraising angles\n",
+  "   - Strategic recommendations framed as investment opportunities\n",
+  "   - Closing call-to-action for decision-makers\n\n",
+  
+  "OUTPUT FORMAT (NON-NEGOTIABLE):\n",
+  "- Return ONLY a JSON object with keys 'short_desc' and 'long_desc'\n",
+  "- No additional text, explanations, or formatting\n"
+)
+
+prompt <- paste0(
+  "EXECUTIVE BRIEFING REQUEST:\n\n",
+  
+  "CONTEXT FOR RESOURCE MOBILIZATION:\n",
+  context_str, "\n\n",
+  
+  "SPECIFIC EXECUTIVE NEEDS:\n",
+  "• How can these insights attract major donor funding?\n",
+  "• What strategic decisions should these findings trigger?\n",
+  "• Which data points are most compelling for partnership pitches?\n",
+  "• What risks or opportunities require immediate executive attention?\n\n",
+  
+  "TASK: Generate a JSON object with two executive-ready narratives.\n",
+  "1. SHORT_DESC: Attention-grabbing headline for fundraising materials\n",
+  "2. LONG_DESC: Persuasive narrative to secure donor commitment\n",
+  "Respect strict token limits: ", max_tokens_short_desc, " and ", max_tokens_long_desc, " tokens respectively."
+)
   
 
   # Logic to select provider
@@ -500,6 +533,8 @@ generate_description <- function(structure,
 ```
 
 ```{r example-generate_description}
+
+library(ggplot2)
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
   unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE) +
@@ -579,7 +614,8 @@ generate_plot_story <- function(plot,
  
 
 ```{r example-generate_plot_story, eval=FALSE}
- 
+
+library(ggplot2) 
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
   unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE) +
@@ -589,7 +625,7 @@ p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
     caption = "Source: mtcars dataset"
   )
 
-#generate_plot_story(p, provider = "ollama", model = "deepseek-r1")
+# generate_plot_story(p, provider = "ollama", model = "deepseek-r1")
 
 story <- generate_plot_story(
   p,
@@ -832,7 +868,7 @@ test_that("template_compare works", {
 
 # Keep eval=FALSE to avoid infinite loop in case you hit the knit button
 # Execute in the console directly
-fusen::inflate(flat_file = "dev/dev_template.Rmd", clean= TRUE, vignette_name = " -- Report Utilities")
+fusen::inflate(flat_file = "dev/dev_template.Rmd", clean= TRUE, vignette_name = "-- Report Utilities")
 ```
 
 

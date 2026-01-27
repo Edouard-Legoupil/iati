@@ -31,8 +31,8 @@ knitr::kable(iati::dataTransaction |>
                 dplyr::select(aid_type1_name, aid_type1_description)  |>
                 dplyr::distinct() |>
                 dplyr::filter(!(is.na(aid_type1_name))))
-show_contributions(year = c(2018, 2019,2020, 2021, 2022, 2023), 
+show_contributions(year = c(2022, 2023, 20024, 2025), 
                    ctr_name = "Brazil") 
-show_contributions(year = c(2018, 2019,2020, 2021, 2022, 2023), 
+show_contributions(year = c(2022, 2023, 20024, 2025), 
                    programme_lab = "The Americas") 
 }

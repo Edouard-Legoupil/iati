@@ -1,7 +1,9 @@
-pandoc: 3.1.1
-pkgdown: 2.0.7
+pandoc: 3.6.3
+pkgdown: 2.2.0
 pkgdown_sha: ~
 articles:
-  unhcr-programme: unhcr-programme.html
-last_built: 2024-03-27T21:57Z
-
+  ai-powered-reports: ai-powered-reports.html
+  data-preparation: data-preparation.html
+  donor-analysis: donor-analysis.html
+  report-utilities: report-utilities.html
+last_built: 2026-01-27T16:44Z

@@ -29,6 +29,6 @@ What are the most funded sectors per country based on new RBM framework.
    under 16 "Outcome Areas".
 }
 \examples{
-show_outcome_rbm( year =  c(  2020, 2021, 2022), 
+show_outcome_rbm( year =  c(2022, 2023, 20024, 2025), 
              ctr_name = "Brazil")
 }

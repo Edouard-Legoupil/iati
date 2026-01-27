@@ -34,16 +34,16 @@ Who are the main donors by country in terms of transaction?
 knitr::kable(iati::dataTransaction |>
                 dplyr::select( transaction_type_name, transaction_type_description) |>
                 dplyr::distinct() )
-show_donors(year = 2022,
+show_donors(year = 2025,
            programme_lab = "The Americas",
            transaction_type_name = "Incoming Commitment" )
-show_donors(year = c(2018, 2019,2020, 2021, 2022, 2023),
+show_donors(year = c(2022, 2023, 20024, 2025),
            ctr_name = "Brazil",
            transaction_type_name = "Incoming Commitment" )
-show_donors(year = c(2018, 2019,2020, 2021, 2022, 2023),
+show_donors(year = c(2022, 2023, 20024, 2025),
            programme_lab = "Brazil",
            transaction_type_name = "Disbursement" )
-show_donors(year = c(2018, 2019,2020, 2021, 2022, 2023),
+show_donors(year = c(2022, 2023, 20024, 2025),
            programme_lab = "Brazil",
            transaction_type_name = "Expenditure" )
 }

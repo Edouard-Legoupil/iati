@@ -298,6 +298,7 @@
 #'   \item{\code{location_id_vocabulary}}{logical COLUMN_DESCRIPTION}
 #'   \item{\code{location_id_code}}{logical COLUMN_DESCRIPTION}
 #'   \item{\code{location_name}}{character COLUMN_DESCRIPTION}
+#'   \item{\code{location_type}}{character COLUMN_DESCRIPTION}
 #'   \item{\code{location_activity_descr}}{logical COLUMN_DESCRIPTION}
 #'   \item{\code{location_adm_vocabulary}}{logical COLUMN_DESCRIPTION}
 #'   \item{\code{location_adm_level}}{logical COLUMN_DESCRIPTION}

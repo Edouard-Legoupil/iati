@@ -31,7 +31,7 @@ params:
   dpi: 260
 
   # typography
-  base_text_size: 23
+  base_text_size: 26
   axis_text_size: 18
   legend_text_size: 18
   strip_text_size: 21
@@ -115,7 +115,6 @@ render_plot <- function(x) {
 
 normalize_plot <- function(p) {
   if (!inherits(p, "ggplot")) return(p)
-  p <- p + ggplot2::labs(title = NULL, subtitle = NULL, caption = NULL)
   p + ggplot2::theme(
     text = ggplot2::element_text(size = params$base_text_size, family = plot_family_safe),
     axis.text = ggplot2::element_text(size = params$axis_text_size, family = plot_family_safe),
@@ -150,19 +149,35 @@ chat =  ellmer::chat_azure_openai(
 
 # Plots
 donor_ranking_raw <- safe_plot(
-  show_donor_ranking(donor_name = params$name, 
-                     year = if (is.null(p_year)) NULL else max(p_year), 
-                     top_n_display = 10, 
-                     ctr_name = p_ctr, 
-                     verbose = FALSE))
+  show_donor_ranking(
+    donor_name = params$name,
+    year = if (is.null(p_year))
+      NULL
+    else
+      max(p_year),
+    top_n_display = 10,
+    ctr_name = p_ctr,
+    verbose = FALSE
+  )
+)
+
+donor_regional_focus_treemap_raw <- safe_plot(
+  plot_donor_regional_focus_treemap(
+    donor_name = params$name,
+    year = 2025,
+    label_font_size = 5
+  )
+)
+
+
 
 donor_funding_over_time_raw <- safe_plot(
   show_donor_funding_over_time(donor_name = params$name, 
                                year = c(2022, 2023, 20234, 2025),
                                by = "region"))
 
-donor_geographic_diversification_raw <- safe_plot(
-  show_donor_geographic_diversification(
+donor_activity_diversification_raw <- safe_plot(
+  show_donor_activity_diversification(
     donor_name = params$name, 
     start_year = p_start, 
     end_year = p_end,
@@ -172,35 +187,43 @@ donor_geographic_diversification_raw <- safe_plot(
 donor_earmarking_raw <- safe_plot(
   show_donor_earmarking(
     donor_name = params$name, 
-    year = p_year,
+    year = c(  2025),
     by = params$earmarking_by,
     ctr_name = p_ctr))
 
-donor_transaction_desc_raw <- safe_plot(
-  show_donor_transaction_desc(donor_name = params$name, 
-                              by_primary = "transaction_description", 
-                              by_secondary = "unhcr_region",
-                              year = p_year, 
-                              ctr_name = p_ctr, 
-                              top_n = params$top_n_interest))
+# donor_transaction_desc_raw <- safe_plot(
+#   show_donor_transaction_desc(donor_name = params$name, 
+#                               by_primary = "transaction_description", 
+#                               by_secondary = "unhcr_region",
+#                               year = p_year, 
+#                               ctr_name = p_ctr, 
+#                               top_n = params$top_n_interest))
 
 donor_funding_volatility_raw <- safe_plot(
   show_donor_funding_volatility(donor_name = params$name,
-                                year = p_year, 
-                                ctr_name = p_ctr,
-                                time_unit = params$volatility_time_unit, 
-                                forecast_horizon = params$volatility_forecast_h,
-                                show_forecast_ci = isTRUE(params$volatility_show_ci), 
-                                verbose = FALSE))
+  year = 2023:2026,
+  forecast_horizon = 8,
+  time_unit = "month",
+  verbose = FALSE))
+
 compare_donor_profiles_raw <- safe_plot(            
     compare_donor_profiles(  donor_names =  params$name,
-                            by = "earmarking",
-                            year =  p_year,
-                            avg_method = "pooled"))
+                              by = "earmarking",
+                              year = p_year,
+                              avg_method = "pooled",
+                              display_mode = "relative"))
+
+compare_donor_profiles2_raw <- safe_plot(            
+    compare_donor_profiles(  donor_names =  params$name,
+                              by = "unhcr_region",
+                              year = p_year,
+                              avg_method = "pooled",
+                              display_mode = "relative"))
+
 
 donor_geographic_priority_shift_raw <- safe_plot(    
   show_donor_geographic_priority_shift(  donor_name =  params$name,
-                                         top_n_countries = 4,
+                                         top_n_countries = 6,
                                          start_year = 2022,
                                          end_year = 2025))
 
@@ -214,12 +237,17 @@ stories <- c(
                                   max_tokens_short_desc = params$max_tokens_short_desc,
                                   max_tokens_long_desc= params$max_tokens_long_desc ),
   
+  "Focus" = generate_plot_story( donor_regional_focus_treemap_raw, 
+                                  provider = params$ai_provider, model = params$ai_model,
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc ),
+  
   "Funding" = generate_plot_story(donor_funding_over_time_raw, 
                                   provider = params$ai_provider, model = params$ai_model,
                                   max_tokens_short_desc = params$max_tokens_short_desc,
                                   max_tokens_long_desc= params$max_tokens_long_desc),
   
-  "Diversification" = generate_plot_story(donor_geographic_diversification_raw, 
+  "Diversification" = generate_plot_story(donor_activity_diversification_raw, 
                                   provider = params$ai_provider, model = params$ai_model,
                                   max_tokens_short_desc = params$max_tokens_short_desc,
                                   max_tokens_long_desc= params$max_tokens_long_desc),
@@ -229,9 +257,9 @@ stories <- c(
                                   max_tokens_short_desc = params$max_tokens_short_desc,
                                   max_tokens_long_desc= params$max_tokens_long_desc),
   
-  "Interest" = generate_plot_story(donor_transaction_desc_raw, 
-                                  provider = params$ai_provider, model = params$ai_model, 
-                                  max_tokens = params$ai_max_tokens_exec),
+  # "Interest" = generate_plot_story(donor_transaction_desc_raw, 
+  #                                 provider = params$ai_provider, model = params$ai_model, 
+  #                                 max_tokens = params$ai_max_tokens_exec),
   
   
   "Volatility" = generate_plot_story(donor_funding_volatility_raw, 
@@ -245,6 +273,12 @@ stories <- c(
                                   max_tokens_short_desc = params$max_tokens_short_desc,
                                   max_tokens_long_desc= params$max_tokens_long_desc),
   
+  
+  "ProfileReg" = generate_plot_story(compare_donor_profiles2_raw, 
+                                  provider = params$ai_provider, model = params$ai_model, 
+                                  max_tokens_short_desc = params$max_tokens_short_desc,
+                                  max_tokens_long_desc= params$max_tokens_long_desc),
+  
   "Shift" = generate_plot_story(donor_geographic_priority_shift_raw, 
                                   provider = params$ai_provider, model = params$ai_model, 
                                   max_tokens_short_desc = params$max_tokens_short_desc,
@@ -253,7 +287,7 @@ stories <- c(
 
 
 chat =  ellmer::chat_azure_openai(
-  system_prompt = "You are a humanitarian funding analyst.Your task is to build a concise executive summary to describe the profile of a specific recipient based on provided information",
+  system_prompt = "You are a humanitarian funding analyst.Your task is to build a concise executive summary to describe the profile of a specific recipient based on provided information, Your goal is to highlight the most relevant information to inform fundraising activities and project design. ",
   model = "gpt-4.1-mini",
   api_version = Sys.getenv("AZURE_OPENAI_API_VERSION"),
   endpoint = Sys.getenv("AZURE_OPENAI_ENDPOINT"),
@@ -262,12 +296,13 @@ chat =  ellmer::chat_azure_openai(
 exec <- chat$chat( paste0(" Build a short ",params$ai_max_tokens_exec , "  words Donor Profile for ",
                            params$name, ". \n. Ground your summary on the below information:",
                            stories["Ranking.long_desc"] , "\n\n",
+                           stories["Focus.long_desc"] , "\n\n",
                            stories["Funding.long_desc"] , "\n\n",  
                            stories["Diversification.long_desc"] , "\n\n", 
                            stories["Earmarking.long_desc"] , "\n\n",
                            stories["Profile.long_desc"] , "\n\n",
-                           stories["Shift.long_desc"] , "\n\n",  
-                           stories["Interest.long_desc"] , "\n\n",  
+                           stories["ProfileReg.long_desc"] , "\n\n",
+                           stories["Shift.long_desc"] , "\n\n",    
                            stories["Volatility.long_desc"] , "\n\n", 
                           " \n\n INSTRUCTIONS: Do not repeat the provided content - focus on extracting key high level information for a fund raisers audience"
                            )) 
@@ -294,8 +329,31 @@ donor_ranking
 ```
 
 
+## Focus Portfolio
 
-## Funding  
+`r stories["Focus.long_desc"]`  
+  
+```{r Focus}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
+
+donor_regional_focus_treemap <- normalize_plot(donor_regional_focus_treemap_raw +
+                ggplot2::labs(subtitle = stories["Focus.short_desc"]))
+
+donor_regional_focus_treemap
+
+plot_donor_location_map(
+  donor_name = params$name,
+  year = 2025,
+  top_n_locations = 5,
+  max_symbol_size = 20
+)
+```
+
+## Funding  Trends
 
 `r stories["Funding.long_desc"]`  
   
@@ -312,25 +370,9 @@ donor_funding_over_time <- normalize_plot(donor_funding_over_time_raw +
 donor_funding_over_time
 ```
 
-## Diversification & Shift
 
-`r stories["Diversification.long_desc"]`  
-  
-```{r Diversification}
-#| fig.retina: 2.0
-#| fig.width: 8.0
-#| fig.asp: 0.618
-#| fig.align: center
-#| out.width: 90%
 
-donor_geographic_diversification <- normalize_plot(
-  donor_geographic_diversification_raw +
-    ggplot2::labs(subtitle = stories["Diversification.short_desc"]))
-
-donor_geographic_diversification
-```
-
-## Earmarking
+## Earmarking Behavior
 
 `r stories["Earmarking.long_desc"]`  
   
@@ -346,7 +388,7 @@ donor_earmarking <- normalize_plot(donor_earmarking_raw +
 donor_earmarking
 ```
 
-## Comparison
+## Comparison with other donors
 
 `r stories["Profile.long_desc"]`  
   
@@ -363,8 +405,23 @@ compare_donor_profiles <- normalize_plot(compare_donor_profiles_raw +
 compare_donor_profiles
 ```
 
+`r stories["ProfileReg.long_desc"]`  
+  
+```{r Profile2}
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.618
+#| fig.align: center
+#| out.width: 90%
 
-## Geographic Shift
+compare_donor_profiles2 <- normalize_plot(compare_donor_profiles2_raw +
+                   ggplot2::labs(subtitle = stories["ProfileReg.short_desc"]))
+
+compare_donor_profiles2
+```
+
+
+## Main Activitiies Shift
 
 `r stories["Shift.long_desc"]`  
   
@@ -383,24 +440,27 @@ donor_geographic_priority_shift <- normalize_plot(
 donor_geographic_priority_shift
 ```
 
+## Activities Diversification 
 
-## Specific Interest
-
-`r stories["Interest.long_desc"]`  
+`r stories["Diversification.long_desc"]`  
   
-```{r Interest}
+```{r Diversification}
 #| fig.retina: 2.0
 #| fig.width: 8.0
 #| fig.asp: 0.618
 #| fig.align: center
 #| out.width: 90%
 
-donor_transaction_desc <- normalize_plot(donor_transaction_desc_raw +
-                          ggplot2::labs(subtitle = stories["Interest.short_desc"]))
-donor_transaction_desc
+donor_activity_diversification <- normalize_plot(
+  donor_activity_diversification_raw +
+    ggplot2::labs(subtitle = stories["Diversification.short_desc"]))
+
+donor_activity_diversification
 ```
 
-## Volatility
+
+
+## Transaction Volatility
 
 `r stories["Volatility.long_desc"]`  
   

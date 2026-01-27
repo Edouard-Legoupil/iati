@@ -6,11 +6,18 @@
 
 ## Objective
 
-A data package with UNHCR contribution to the [International Aid Transparency Initiative (IATI)](https://reporting.unhcr.org/iati-international-aid-transparency-initiative) that aims at:
+A data package and analysis collection based on UNHCR contribution to the [International Aid Transparency Initiative (IATI)](https://reporting.unhcr.org/iati-international-aid-transparency-initiative) that aims at:
 
  * reshaping IATI extraction from a complex xml file structure to a more user-friendly tabular format with necessary look-up code tables
  * offer easy to consume documentation on the data structure
  * provide built-in ggplot2 visualization, aka a "__chart library__" around high level key questions on UNHCR programme. Those visualizations can be integrated in Operation Situation Analysis or Protection Monitoring Analysis.
+ * offer report templates with AI analsysis capabilities
+
+## Rationale
+
+While anyone can already ask a large language model to pull IATI date and assemble an ad‑hoc analysis, that approach remains fundamentally limited: every chat interaction produces a different framing, different emphases, and different analytical pathways. By contrast, using AI to generate narrative on top of a standardized set of charts and indicators introduces a level of methodological consistency that simple chat-based prompting cannot achieve. This framework ensures that every operation is analyzed through the same __structured lens__, enabling comparability across countries, time periods, and thematic areas. Instead of reinventing the analysis each time, the AI is anchored in a stable analytical model—reducing variance, improving coherence, and guaranteeing that key questions are always addressed.
+
+Just as importantly, this method produces narrative drafts that are __“human‑in‑the‑loop ready”__: analysts can immediately focus on refinement, nuance, and validation rather than on assembling first‑pass descriptive text. The result is a workflow where AI accelerates the routine narrative generation, while human experts retain control over interpretation, context, and judgment.
 
 ## Install  
 

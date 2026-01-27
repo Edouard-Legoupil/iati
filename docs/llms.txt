@@ -1,0 +1,367 @@
+# {iati} ![](reference/figures/hex-.png)
+
+## Objective
+
+A data package and analysis collection based on UNHCR contribution to
+the [International Aid Transparency Initiative
+(IATI)](https://reporting.unhcr.org/iati-international-aid-transparency-initiative)
+that aims at:
+
+- reshaping IATI extraction from a complex xml file structure to a more
+  user-friendly tabular format with necessary look-up code tables
+- offer easy to consume documentation on the data structure
+- provide built-in ggplot2 visualization, aka a “**chart library**”
+  around high level key questions on UNHCR programme. Those
+  visualizations can be integrated in Operation Situation Analysis or
+  Protection Monitoring Analysis.
+- offer report templates with AI analsysis capabilities
+
+## Rationale
+
+While anyone can already ask a large language model to pull IATI date
+and assemble an ad‑hoc analysis, that approach remains fundamentally
+limited: every chat interaction produces a different framing, different
+emphases, and different analytical pathways. By contrast, using AI to
+generate narrative on top of a standardized set of charts and indicators
+introduces a level of methodological consistency that simple chat-based
+prompting cannot achieve. This framework ensures that every operation is
+analyzed through the same **structured lens**, enabling comparability
+across countries, time periods, and thematic areas. Instead of
+reinventing the analysis each time, the AI is anchored in a stable
+analytical model—reducing variance, improving coherence, and
+guaranteeing that key questions are always addressed.
+
+Just as importantly, this method produces narrative drafts that are
+**“human‑in‑the‑loop ready”**: analysts can immediately focus on
+refinement, nuance, and validation rather than on assembling first‑pass
+descriptive text. The result is a workflow where AI accelerates the
+routine narrative generation, while human experts retain control over
+interpretation, context, and judgment.
+
+## Install
+
+    # install.packages("pak")
+    pak::pkg_install("unhcr-americas/iati")
+
+## Context
+
+Extracting information from IATI can assist governments to plan and
+manage their budgets; parliamentarians and citizens to better hold
+governments accountable; community-based organisations to influence how
+resources are used; and journalists, researchers and activists to
+investigate the use and impact of the resources.
+
+Information from Global Focus is translated into the IATI open data
+standard and published using UNHCR’s IATI identifier: XM-DAC-41121. An
+overview of the publication process is accessible through [IATI
+Dashboard](http://dashboard.iatistandard.org/publisher/unhcr.md). Every
+UNHCR operation world-wide is reported on for each year from 2016. This
+includes financial information (budget, contributions, disbursements and
+expenditure), office locations, and results at various levels of
+activity. Activities for 2019 and onwards are be published as soon as
+possible after they become available. This current package is updated a
+much as possible….
+
+### What is IATI?
+
+Launched in Accra in 2008, the International Aid Transparency Initiative
+([IATI](https://iatistandard.org/en/about/)) is a multi-stakeholder
+initiative and international open data standard that aims to improve the
+transparency and openness of both development and humanitarian
+activities. In the 2016 Humanitarian grand Bargain, multiple
+organisations also [committed
+to](https://interagencystandingcommittee.org/greater-transparency)
+“*Publish timely, transparent, harmonised and open high-quality data on
+humanitarian funding within two years of the World Humanitarian Summit
+in Istanbul” noting that parties “consider IATI to provide a basis for
+the purpose of a common standard.*”
+
+IATI provides a mechanism for the regular, automated publication of open
+data on financial flows and also enables organizations to publish
+information on their project or programming activities, including
+information on monitoring, evaluation and results. Overall, 1000+
+[humanitarian and development
+organisations](https://www.iatiregistry.org/publisher/unhcr), including
+government donors, multilateral and UN agencies and international and
+local NGOs currently use the IATI Standard to publish information on who
+funds them, where the money goes and the impact or outcome of their
+activities. The use of IATI for Humanitarian actors is among the
+commitment from the grand bargain as presented in the [dedicated
+portal](https://www.humportal.org/about).
+
+The International Aid Transparency Initiative (IATI) data to trace aid
+flows from donor treasuries to their final end use. IATI is designed so
+that people can trace development spending flows through the development
+implementation chain, from one organization to other organizations,
+right down to the final stage in the chain: spending on goods and
+services. **Traceability** in IATI works by following the money as it
+flows from organization to organization through the development
+implementation chain. Provided that all organizations publish their
+information, it is possible to assess how much of the total funding at
+the beginning of the implementation chain is spent on goods and
+services, and where the money is spent.
+
+Data published to IATI is published in `activity` units, the core
+building blocks of the data. **Activities** are usually projects, but
+they can be any unit of development cooperation as defined by the
+publisher, such as a program or a contract. Typically,an entire donor
+country program is made up of a number of activities. Each activity is
+given a unique identifier and contains details of all incoming and
+outgoing transactions. Each transaction also has a unique identifier and
+contains data covering,among other things,the date, the value, a
+description, and details about the provider and receivers of the funds.
+It is classified into one of three categories.
+
+**Disbursement**: Outgoing funds placed at the disposal of a recipient
+government or organization, or funds transferred between two separately
+reported activities. Under IATI traceability standards the recipient of
+a disbursement should also be required to report their activities to
+IATI.
+
+**Expenditure**: Outgoing funds spent directly on goods and services for
+the activity. The recipients of expenditures fall outside of IATI
+traceability standards and are considered to be the end of the
+implementation chain. Therefore, an expenditure provided to a
+non-country-based organization is considered to be funds \`not reaching
+the country.
+
+**Incoming fund**: Funds received for an activity, which can be from an
+external or internal source.
+
+**Organisations** can have different roles in IATI (each of them being
+segregated into different “Organisation Types”): \* Reporting
+Organisations, i.e. organisations voluntarily reporting about their aid
+projects \* Implementations organisations, that actually implements the
+activity.
+
+The main concept are summarized in the table below from [IFRC IATI
+Feasibility
+Study](https://media.ifrc.org/ifrc/wp-content/uploads/sites/5/2018/03/IFRC-IATI-Feasibility-Study-Report-Final-2017-12-14.pdf) -
+see also the
+[Appendices](https://media.ifrc.org/ifrc/wp-content/uploads/sites/5/2018/03/IFRC-IATI-Feasibility-Study-Appendices-Final-2017-12-14.pdf)
+
+![](reference/figures/iatifig3.png)
+
+The diagram below provides also a summary of the main topics covered
+through IATI:
+![](https://raw.githubusercontent.com/unhcr-americas/iati/main/inst/iati.png)
+
+### Key Visualisation on UNHCR Programme in the library (work-in-progress)
+
+- What are the **most funded sectors** per country (Expenditure
+  evolution per impact /outcome area)?  
+- Who are the **main donors by country** in terms of number of projects
+  and/or total budget?  
+- Who are the **main implementing partners by country** in terms of
+  number of projects and/or total budget?  
+- What’s the breakdown of **Earmarking Type** (Un-earmarked, Tightly
+  earmarked, etc.) from Donor Funds by Year?  
+- What’s the level of **partnership between organisations** when
+  implementing projects?  
+- How much **expenditures compare to the initial budget** (weighted by
+  \# PoCs / GPP in the country)?  
+- How much **indicators** evolve over time against thresholds?
+
+### Out of Scope: Humanitarian Funding at large
+
+This package only includes UNHCR Data, as such the following questions
+can not be adressed:
+
+- What is the **share of funds received by different UN Agencies**
+  (UNICEF, WFP, IOM, UNDP, UNOCHA)?
+- How much donors **balance resources between different humanitarian
+  crisis**?
+- How much donors allocate budget between **humanitarian and development
+  programmes** devoted to displacement crisis by key donors/region
+- How much of donors funding goes to **migratory vs refugee issues**?
+- What’s the **share of ODA** (Official Development Assistance) among
+  the total flow of foreign aid per country?
+- What’s the share of ODA going to **benefit of refugees**? (this can
+  complement the measurement of [Global Refugee Compact Indicators
+  related to ODA](https://www.unhcr.org/5cf907854.pdf#page=13))  
+- What is the share of ODA allocated to **national actors**?  
+- What’s the **share of Humanitarian assistance** within the total ODA?
+
+## Contribute
+
+The package includes different tables (`data`, `code` & `reference`)
+together with a series of visualization functions, aka a “chart
+library”“, (`show`) based on ggplot2
+
+This package is built with the help of [fusen
+package](https://thinkr-open.github.io/fusen/index.html) which allow to
+easily maintain consistent documentation through a single notebook.
+
+    fusen::inflate(flat_file = "dev/dev_unhcr_programme.Rmd", vignette_name = "UNHCR Programme")
+
+# Package index
+
+## All functions
+
+- [`clean_llm_response()`](clean_llm_response.md) : Clean LLM Response
+- [`codeActivityDateType`](codeActivityDateType.md) :
+  codeActivityDateType
+- [`codeActivityScope`](codeActivityScope.md) : codeActivityScope
+- [`codeActivityStatus`](codeActivityStatus.md) : codeActivityStatus
+- [`codeAidType`](codeAidType.md) : codeAidType
+- [`codeAidTypeCategory`](codeAidTypeCategory.md) : codeAidTypeCategory
+- [`codeAidTypeVocabulary`](codeAidTypeVocabulary.md) :
+  codeAidTypeVocabulary
+- [`codeBudgetIdentifier`](codeBudgetIdentifier.md) :
+  codeBudgetIdentifier
+- [`codeBudgetIdentifierSector`](codeBudgetIdentifierSector.md) :
+  codeBudgetIdentifierSector
+- [`codeBudgetStatus`](codeBudgetStatus.md) : codeBudgetStatus
+- [`codeBudgetType`](codeBudgetType.md) : codeBudgetType
+- [`codeCashandVoucherModalities`](codeCashandVoucherModalities.md) :
+  codeCashandVoucherModalities
+- [`codeCollaborationType`](codeCollaborationType.md) :
+  codeCollaborationType
+- [`codeCountry`](codeCountry.md) : codeCountry
+- [`codeCurrency`](codeCurrency.md) : codeCurrency
+- [`codeDescriptionType`](codeDescriptionType.md) : codeDescriptionType
+- [`codeEarmarkingCategory`](codeEarmarkingCategory.md) :
+  codeEarmarkingCategory
+- [`codeFlowType`](codeFlowType.md) : codeFlowType
+- [`codeGeographicLocationClass`](codeGeographicLocationClass.md) :
+  codeGeographicLocationClass
+- [`codeHumCluster`](codeHumCluster.md) : codeHumCluster
+- [`codeHumanitarianScopeType`](codeHumanitarianScopeType.md) :
+  codeHumanitarianScopeType
+- [`codeHumanitarianScopeVocabulary`](codeHumanitarianScopeVocabulary.md)
+  : codeHumanitarianScopeVocabulary
+- [`codeIATIOrganisationIdentifier`](codeIATIOrganisationIdentifier.md)
+  : codeIATIOrganisationIdentifier
+- [`codeIndicatorMeasure`](codeIndicatorMeasure.md) :
+  codeIndicatorMeasure
+- [`codeIndicatorVocabulary`](codeIndicatorVocabulary.md) :
+  codeIndicatorVocabulary
+- [`codeOrganisationIdentifier`](codeOrganisationIdentifier.md) :
+  codeOrganisationIdentifier
+- [`codeOrganisationRegistrationAgency`](codeOrganisationRegistrationAgency.md)
+  : codeOrganisationRegistrationAgency
+- [`codeOrganisationRole`](codeOrganisationRole.md) :
+  codeOrganisationRole
+- [`codeOrganisationType`](codeOrganisationType.md) :
+  codeOrganisationType
+- [`codePolicyMarker`](codePolicyMarker.md) : codePolicyMarker
+- [`codeRegion`](codeRegion.md) : codeRegion
+- [`codeResultType`](codeResultType.md) : codeResultType
+- [`codeSector`](codeSector.md) : codeSector
+- [`codeSectorCategory`](codeSectorCategory.md) : codeSectorCategory
+- [`codeSectorVocabulary`](codeSectorVocabulary.md) :
+  codeSectorVocabulary
+- [`codeTransactionType`](codeTransactionType.md) : codeTransactionType
+- [`codeUNSDGGoals`](codeUNSDGGoals.md) : codeUNSDGGoals
+- [`codeUNSDGTargets`](codeUNSDGTargets.md) : codeUNSDGTargets
+- [`compare_donor_profiles()`](compare_donor_profiles.md) : Compare
+  donor profiles
+- [`compare_resource_result()`](compare_resource_result.md) :
+  compare_resource_result
+- [`dataActivity`](dataActivity.md) : dataActivity
+- [`dataBudget`](dataBudget.md) : dataBudget
+- [`dataDefault_aid_type`](dataDefault_aid_type.md) :
+  dataDefault_aid_type
+- [`dataDocument_link`](dataDocument_link.md) : dataDocument_link
+- [`dataHumanitarian_scope`](dataHumanitarian_scope.md) :
+  dataHumanitarian_scope
+- [`dataLocation`](dataLocation.md) : dataLocation
+- [`dataParticipating_org`](dataParticipating_org.md) :
+  participating_org
+- [`dataRelated_activity`](dataRelated_activity.md) :
+  dataRelated_activity
+- [`dataResult`](dataResult.md) : dataResult
+- [`dataSector`](dataSector.md) : sector
+- [`dataTransaction`](dataTransaction.md) : transaction
+- [`extract_structure()`](extract_structure.md) : Extract Plot Structure
+  and Metadata
+- [`generate_description()`](generate_description.md) : Generate Plot
+  Description with AI (Phase 3)
+- [`generate_plot_story()`](generate_plot_story.md) : Generate
+  Humanitarian Data Story from ggplot
+- [`generate_report()`](generate_report.md) : Generate Quarto HTML / PDF
+  Country Factsheets in Batch
+- [`iati_reshape()`](iati_reshape.md) : iati_reshape
+- [`iati_reshape_all()`](iati_reshape_all.md) : Reshape IATI data and
+  write to files
+- [`mapping_indicator`](mapping_indicator.md) : mapping_indicator
+- [`mapping_result`](mapping_result.md) : mapping_result
+- [`mapping_sdg`](mapping_sdg.md) : mapping_sdg
+- [`mapping_sector`](mapping_sector.md) : mapping_sector
+- [`plot_donor_concentration()`](plot_donor_concentration.md) : Plot
+  donor funding concentration
+- [`plot_donor_earmarking()`](plot_donor_earmarking.md) : Plot donor
+  earmarking
+- [`plot_donor_earmarking_flexibility_over_time()`](plot_donor_earmarking_flexibility_over_time.md)
+  : Plot donor earmarking flexibility over time
+- [`plot_donor_funding_over_time()`](plot_donor_funding_over_time.md) :
+  Plot donor funding over time
+- [`plot_donor_funding_volatility()`](plot_donor_funding_volatility.md)
+  : Plot donor funding volatility
+- [`plot_donor_interest_profile()`](plot_donor_interest_profile.md) :
+  Plot donor interest profile
+- [`plot_donor_location_map()`](plot_donor_location_map.md) : Plot donor
+  funding on a world map with proportional symbols
+- [`plot_donor_regional_focus_treemap()`](plot_donor_regional_focus_treemap.md)
+  : Plot donor regional and programme focus as a treemap
+- [`plot_implementing_partner_earmarking()`](plot_implementing_partner_earmarking.md)
+  : Plot implementing partner earmarking
+- [`plot_implementing_partner_funding_over_time()`](plot_implementing_partner_funding_over_time.md)
+  : Plot implementing partner funding over time
+- [`profile_data()`](profile_data.md) : Profile Plot Data
+- [`show_budget_gap()`](show_budget_gap.md) : show_budget_gap
+- [`show_contributions()`](show_contributions.md) : Title
+- [`show_donor_activity_diversification()`](show_donor_activity_diversification.md)
+  : Plot donor activity diversification over time (percentage coverage
+  vs. benchmark lines: Top 5 with donor points, per-year labels (number
+  of operations), and LOESS smoothing
+- [`show_donor_earmarking()`](show_donor_earmarking.md) : Plot
+  earmarking composition for a donor (stacked bar chart)
+- [`show_donor_earmarking_flexibility_over_time()`](show_donor_earmarking_flexibility_over_time.md)
+  : Plot donor earmarking flexibility over time
+- [`show_donor_earmarking_profile()`](show_donor_earmarking_profile.md)
+  : Show donor earmarking profiles
+- [`show_donor_funding_over_time()`](show_donor_funding_over_time.md) :
+  Plot donor funding over time (bar chart)
+- [`show_donor_funding_volatility()`](show_donor_funding_volatility.md)
+  : Plot donor funding volatility
+- [`show_donor_geographic_priority_shift()`](show_donor_geographic_priority_shift.md)
+  : Plot donor geographic priority shift over time (alluvial, CVD-safe
+  colors + correct labels)
+- [`show_donor_ranking()`](show_donor_ranking.md) : Donor ranking by
+  funding volume (lollipop) with optional WB population/GDP weighting
+- [`show_donor_transaction_desc()`](show_donor_transaction_desc.md) :
+  Plot donor transaction description
+- [`show_donors()`](show_donors.md) : show_donors
+- [`show_earmarking()`](show_earmarking.md) : Title
+- [`show_expenditure()`](show_expenditure.md) : show_expenditure
+- [`show_funding_partners_treemap()`](show_funding_partners_treemap.md)
+  : Show a treemap of top funding partners
+- [`show_goal_sdg()`](show_goal_sdg.md) : show_goal_sdg
+- [`show_implementing_partners_flow()`](show_implementing_partners_flow.md)
+  : Show a flow diagram of implementing partners
+- [`show_indicators()`](show_indicators.md) : show_indicators
+- [`show_indicators_time()`](show_indicators_time.md) :
+  show_indicators_time
+- [`show_outcome_rbm()`](show_outcome_rbm.md) : show_outcome_rbm
+- [`show_outcome_result()`](show_outcome_result.md) :
+  show_outcome_result
+- [`show_partnership()`](show_partnership.md) : show_partnership
+- [`show_sectors()`](show_sectors.md) : show_sectors
+- [`show_sectors_rbm()`](show_sectors_rbm.md) : show_sectors_rbm
+- [`show_top_donors()`](show_top_donors.md) : show_top_donors
+- [`show_transaction_flow()`](show_transaction_flow.md) :
+  show_transaction_flow
+- [`slugify()`](slugify.md) : slugify
+- [`template_compare()`](template_compare.md) : Generate a summary
+  powerpoint
+- [`template_prez()`](template_prez.md) : Generate a summary powerpoint
+
+# Articles
+
+### All vignettes
+
+- [AI Powered Reports](ai-powered-reports.md):
+- [-- Data Preparation](data-preparation.md):
+- [-- Donor Analysis](donor-analysis.md):
+- [-- Report Utilities](report-utilities.md):

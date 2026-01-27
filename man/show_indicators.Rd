@@ -37,27 +37,27 @@ a graph
 How much indicators evolve over time against thresholds?
 }
 \examples{
-show_indicators(year = 2022,  
+show_indicators(year = 2025,  
              ctr_name = "Brazil",
              result_type_name = "Outcome",
              type = "deviation"
              )
-show_indicators(year = 2022,  
+show_indicators(year = 2025,  
              ctr_name = "Brazil",
              result_type_name = "Outcome",
              type = "progress"
              )
-show_indicators(year = 2022,  
+show_indicators(year = 2025,  
              ctr_name = "Brazil",
              result_type_name = "Outcome",
              type = "gap"
              )
-show_indicators(year = 2022,  
+show_indicators(year = 2025,  
              ctr_name = "Brazil",
              result_type_name = "Impact",
              type = "deviation"
              )
-show_indicators(year = 2022,  
+show_indicators(year = 2025,  
              ctr_name = "Brazil",
              result_type_name = "Impact",
              type = "progress"

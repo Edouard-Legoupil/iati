@@ -131,10 +131,36 @@ activity <- activity |>
   ctr_name  =   countrycode::countrycode(iso3c ,
                                origin = "iso3c",
                                destination = "country.name"),
+  
   ##  Add UNHCR Region
   unhcr_region  =   countrycode::countrycode(iso3c ,
                                origin = "iso3c",
-                              destination = "unhcr.region") ) |>
+                              destination = "unhcr.region"),
+  ## Fix kosovo
+  ctr_name =  dplyr::if_else( iso3c == "KOS", "Kosovo" , ctr_name),
+  unhcr_region =  dplyr::if_else( iso3c == "KOS", "Europe" , unhcr_region),
+
+
+  ## clean UNHCR Region -- add RB - then fill with Global / HQ
+  unhcr_region2  =   dplyr::if_else( is.na(unhcr_region), recipient_region , unhcr_region), 
+  
+  ##  Create activity consistent labels
+  activity_name  =   dplyr::case_when(
+    
+    ## if Regional Bureau - RB + Region
+    iso3c %in% c("OO", "RA", "RB")  ~ paste0(  "Regional - ", unhcr_region2),
+    ## if MC0 - Country_name+MCO
+    ops_type == "MCO" ~ paste0( ctr_name, " - ", ops_type),
+    ## Global
+    unhcr_region2 == "Global" ~ programmme_lab,
+    .default = ctr_name ),
+  ## clean activity_name
+  activity_name  =   dplyr::if_else( activity_name == "", paste0("Global") , activity_name), 
+  activity_name  =   dplyr::if_else( is.na(activity_name),  paste0(  "Regional - ", unhcr_region2), activity_name) 
+  ) |>
+  
+  
+  
   ## Remove 
  dplyr::select( - iati_identifier_year_reg_ops) |>
  dplyr::select( - sep)  |> 

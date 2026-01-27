@@ -30,10 +30,10 @@ a graph
 Who are the main donors by country in terms of transaction?
 }
 \examples{
-show_top_donors(year = 2022,
+show_top_donors(year = 2025,
            ctr_name = "Brazil", 
            top_n = 5)
-show_top_donors(year = 2020,
+show_top_donors(year = 2022,
            ctr_name = "Brazil", 
            top_n = 10)
 }

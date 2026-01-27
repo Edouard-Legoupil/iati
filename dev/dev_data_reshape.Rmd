@@ -277,6 +277,7 @@ iati_location <- function(xml_iati, verbose = TRUE) {
       location_id_vocabulary = get_xml_value(node, "location-id", attr = "vocabulary"),
       location_id_code = get_xml_value(node, "location-id", attr = "code"),
       location_name = get_xml_value(node, "name/narrative"),
+      location_type = get_xml_value(node, "description/narrative"),
       location_activity_descr = get_xml_value(node, "activity-description/narrative"),
       location_adm_vocabulary = get_xml_value(node, "administrative", attr = "vocabulary"),
       location_adm_level = get_xml_value(node, "administrative", attr = "level"),
@@ -456,21 +457,30 @@ iati_activity <- function(xml_iati, verbose = TRUE) {
 This section contains the main user-facing function `iati_reshape_all`.
 
 ```{r function-iati_reshape_all}
+
 #' Reshape IATI data and write to files
 #'
 #' @param iati_file_url The URL of the IATI XML file.
 #' @param folder_name The destination folder for the output Excel files. 
+#' @param extractors NULL to run all extractors (default),
+#'        or a character vector of extractor names to run only a subset
+#'        (e.g., c("location") or c("transaction","sector")).
+#'        Valid names: activity, budget, default_aid_type, document_link,
+#'        humanitarian_scope, location, participating_org, related_activity,
+#'        result, sector, transaction, policy_marker, tag
 #' @param verbose Whether to show detailed logging messages.
 #'
 #' @export
-iati_reshape_all <- function(iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2026.xml', 
-                             folder_name = "data-raw",
-                             verbose = TRUE) {
-  
+iati_reshape_all <- function(
+  iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2026.xml', 
+  folder_name   = "data-raw",
+  extractors    = NULL,
+  verbose       = TRUE
+) {
   t1 <- Sys.time()
   log_debug("Starting IATI data reshape for: ", iati_file_url, verbose = verbose)
 
-  data_list <- iati_reshape(iati_file_url, verbose = verbose)
+  data_list <- iati_reshape(iati_file_url, extractors = extractors, verbose = verbose)
   
   write_iati_data(data_list, folder_name, verbose = verbose)
   
@@ -481,7 +491,7 @@ iati_reshape_all <- function(iati_file_url = 'https://files.unhcr.org/en/reporti
 }
 
 #' @noRd
-iati_reshape <- function(iati_file_url, verbose = TRUE) {
+iati_reshape <- function(iati_file_url, extractors = NULL, verbose = TRUE) {
   log_debug("Downloading file...", verbose = verbose)
   iati_file <- fs::file_temp()
   tryCatch({
@@ -490,37 +500,63 @@ iati_reshape <- function(iati_file_url, verbose = TRUE) {
     stop("Failed to download file: ", iati_file_url)
   })
   log_debug("Download complete. File at: ", iati_file, verbose = verbose)
-  
+
+  # Master list of available extractors
   iati_extractors <- list(
-    activity = iati_activity,
-    budget = iati_budget,
-    default_aid_type = iati_default_aid_type,
-    document_link = iati_document_link,
-    humanitarian_scope = iati_humanitarian_scope,
-    location = iati_location,
-    participating_org = iati_participating_org,
-    related_activity = iati_related_activity,
-    result = iati_result,
-    sector = iati_sector,
-    transaction = iati_transaction,
-    policy_marker = iati_policy_marker,
-    tag = iati_tag
+    activity            = iati_activity,
+    budget              = iati_budget,
+    default_aid_type    = iati_default_aid_type,
+    document_link       = iati_document_link,
+    humanitarian_scope  = iati_humanitarian_scope,
+    location            = iati_location,
+    participating_org   = iati_participating_org,
+    related_activity    = iati_related_activity,
+    result              = iati_result,
+    sector              = iati_sector,
+    transaction         = iati_transaction,
+    policy_marker       = iati_policy_marker,
+    tag                 = iati_tag
   )
-  
-  log_debug("Starting parallel extraction...", verbose = verbose)
+
+  # --- Optional subsetting of extractors ---
+  if (!is.null(extractors)) {
+    # normalize case; allow vector
+    wanted <- unique(tolower(as.character(extractors)))
+    all_names <- names(iati_extractors)
+    key_lut <- setNames(all_names, tolower(all_names))
+    unknown <- setdiff(wanted, names(key_lut))
+    if (length(unknown) > 0) {
+      stop(
+        "Unknown extractor(s): ", paste(unknown, collapse = ", "),
+        "\nAvailable extractors: ", paste(all_names, collapse = ", ")
+      )
+    }
+    selected_names <- unname(key_lut[wanted])
+    iati_extractors <- iati_extractors[selected_names]
+    log_debug("Running selected extractor(s): ", paste(selected_names, collapse = ", "), verbose = verbose)
+  } else {
+    log_debug("Running all extractors.", verbose = verbose)
+  }
+
+  # Parallel extraction
+  log_debug("Starting parallel extraction (", length(iati_extractors), " extractor(s))...", verbose = verbose)
   future::plan(future::multisession)
-  
-  all_data <- furrr::future_map(
+  all_data <- furrr::future_imap(
     iati_extractors,
     ~ {
+      # Read XML inside each worker to avoid external pointer issues
       xml_iati <- xml2::read_xml(iati_file)
-      .x(xml_iati, verbose = verbose)
+      fn <- .x
+      nm <- .y
+      log_debug("  • Extracting: ", nm, verbose = verbose)
+      res <- fn(xml_iati, verbose = verbose)
+      res
     },
     .progress = TRUE,
     .options = furrr::furrr_options(seed = TRUE)
   )
   log_debug("Parallel extraction finished.", verbose = verbose)
-  
+
   return(all_data)
 }
 
@@ -535,10 +571,22 @@ write_iati_data <- function(data_list, folder_name, verbose = TRUE) {
   })
   log_debug("Finished writing all files.", verbose = verbose)
 }
+
 ```
 
   
 ```{r example-iati_reshape_all}
+
+
+#  Run ONLY the 'location' extractor:
+# iati_reshape_all(
+#   iati_file_url = "https://files.unhcr.org/en/reporting/unhcr-activities-2026.xml",
+#   folder_name   = "data-raw/unhcr_2026",
+#   extractors    = "location",
+#   verbose       = TRUE
+# )
+
+
 #iati_reshape_all(
 # iati_file_url = 'https://files.unhcr.org/en/reporting/unhcr-activities-2022.xml' , 
 # folder_name = "data-raw/unhcr_2022")
