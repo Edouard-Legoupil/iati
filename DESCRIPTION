@@ -50,7 +50,19 @@ Imports:
     unhcrthemes,
     utils,
     writexl,
-    xml2
+    xml2,
+    ggalluvial,
+    ellmer, 
+    jsonlite, 
+    quarto, 
+    rnaturalearth, 
+    rnaturalearthdata,
+    sf, 
+    skimr, 
+    stringi, 
+    treemapify,
+    viridisLite,
+    worldbank
 Suggests: 
     janitor,
     testthat

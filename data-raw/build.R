@@ -143,6 +143,7 @@ activity <- activity |>
 
   ## clean UNHCR Region -- add RB - then fill with Global / HQ
   unhcr_region2  =   dplyr::if_else( is.na(unhcr_region), recipient_region , unhcr_region), 
+  unhcr_region  =    unhcr_region2, 
   
   ##  Create activity consistent labels
   activity_name  =   dplyr::case_when(

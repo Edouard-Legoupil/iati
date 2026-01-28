@@ -90,35 +90,24 @@ show_donor_transaction_desc <- function(donor_name,
   df <- iati::dataTransaction |>
     dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
     dplyr::filter(
-      .data$transaction_provider_org == donor_name,
-      .data$transaction_type_name == "Incoming Commitment"
+      transaction_provider_org == donor_name,
+      transaction_type_name == "Incoming Commitment"
     )
 
   if (!is.null(year_filter)) {
-    df <- df |> dplyr::filter(.data$year %in% .env$year_filter)
+    df <- df |> dplyr::filter(year %in% .env$year_filter)
   }
   if (!is.null(programme_filter)) {
-    df <- df |> dplyr::filter(.data$programme_lab %in% .env$programme_filter)
+    df <- df |> dplyr::filter(programme_lab %in% .env$programme_filter)
   }
   if (!is.null(ops_filter)) {
-    df <- df |> dplyr::filter(.data$iati_identifier_ops %in% .env$ops_filter)
+    df <- df |> dplyr::filter(iati_identifier_ops %in% .env$ops_filter)
   }
   if (!is.null(country_filter)) {
-    df <- df |> dplyr::filter(.data$ctr_name %in% .env$country_filter)
+    df <- df |> dplyr::filter(ctr_name %in% .env$country_filter)
   }
 
-  # ---- 2) Clean unhcr_region data ----
-  # Replace empty or NA unhcr_region with "global/HQ"
-  if (!is.null(by) && by == "unhcr_region") {
-    df <- df |>
-      dplyr::mutate(
-        unhcr_region = dplyr::case_when(
-          is.na(.data$unhcr_region) ~ "global/HQ",
-          trimws(.data$unhcr_region) == "" ~ "global/HQ",
-          TRUE ~ .data$unhcr_region
-        )
-      )
-  }
+
 
   # ---- 3) Determine grouping columns ----
   # Always include transaction_description, and add 'by' if provided
@@ -130,7 +119,7 @@ show_donor_transaction_desc <- function(donor_name,
     dplyr::filter(dplyr::if_all(dplyr::all_of(col_vars), ~ !is.na(.))) |>
     dplyr::group_by(dplyr::across(dplyr::all_of(col_vars))) |>
     dplyr::summarise(
-      total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+      total_funding = sum(transaction_value_USD, na.rm = TRUE),
       .groups = "drop"
     )
 
@@ -140,7 +129,7 @@ show_donor_transaction_desc <- function(donor_name,
       dplyr::mutate(
         transaction_description = forcats::fct_lump_n(
           forcats::fct_reorder(
-            as.factor(.data$transaction_description),
+            as.factor(transaction_description),
             total_funding,
             .fun = sum,
             .desc = TRUE
@@ -160,7 +149,7 @@ show_donor_transaction_desc <- function(donor_name,
       # Preserve all 4 earmarking categories
       data <- data |>
         dplyr::mutate(
-          earmarking_name = factor(.data$earmarking_name,
+          earmarking_name = factor(earmarking_name,
             levels = c("Tightly Earmarked", "Earmarked", "Softly Earmarked", "Unearmarked")
           )
         )
@@ -168,7 +157,7 @@ show_donor_transaction_desc <- function(donor_name,
       # Order years chronologically
       data <- data |>
         dplyr::mutate(
-          year = factor(.data$year, levels = sort(unique(.data$year)))
+          year = factor(year, levels = sort(unique(year)))
         )
     } else if (by_var %in% c("unhcr_region", "ctr_name")) {
       # For region and country, show top categories based on data
@@ -188,7 +177,7 @@ show_donor_transaction_desc <- function(donor_name,
   # Re-aggregate after lumping/processing
   show_data <- show_data |>
     dplyr::group_by(dplyr::across(dplyr::all_of(col_vars))) |>
-    dplyr::summarise(total_funding = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
+    dplyr::summarise(total_funding = sum(total_funding, na.rm = TRUE), .groups = "drop")
 
   # ---- 6) Calculate total funding for title ----
   total_funding_amount <- sum(show_data$total_funding, na.rm = TRUE)
@@ -226,22 +215,22 @@ show_donor_transaction_desc <- function(donor_name,
     
     # Prepare data for bar chart (summarize and order)
     bar_data <- show_data |>
-      dplyr::group_by(.data$transaction_description) |>
-      dplyr::summarise(total_funding = sum(.data$total_funding, na.rm = TRUE), .groups = "drop") |>
+      dplyr::group_by(transaction_description) |>
+      dplyr::summarise(total_funding = sum(total_funding, na.rm = TRUE), .groups = "drop") |>
       dplyr::mutate(
-        transaction_description = forcats::fct_reorder(.data$transaction_description, .data$total_funding, .desc = FALSE)
+        transaction_description = forcats::fct_reorder(transaction_description, total_funding, .desc = FALSE)
       )
     
     p <- ggplot2::ggplot(
       bar_data,
-      ggplot2::aes(x = .data$transaction_description, y = .data$total_funding)
+      ggplot2::aes(x = transaction_description, y = total_funding)
     ) +
       ggplot2::geom_col(fill = "#0072BC") +
       ggplot2::coord_flip() +
       ggplot2::scale_y_continuous(
         labels = scales::label_number(scale_cut = scales::cut_short_scale())
       ) +
-      unhcrthemes::theme_unhcr(grid = "X", axis = "y", axis_title = "X", font_size = 18) +
+      unhcrthemes::theme_unhcr(grid = "X", axis = "y", axis_title = "X", font_size = 20) +
       ggplot2::labs(
         title = title,
         subtitle = subtitle_text,
@@ -259,11 +248,11 @@ show_donor_transaction_desc <- function(donor_name,
     
     # Order transaction descriptions by total funding (highest at top)
     heatmap_data <- show_data |>
-      dplyr::group_by(.data$transaction_description) |>
-      dplyr::mutate(desc_total = sum(.data$total_funding)) |>
+      dplyr::group_by(transaction_description) |>
+      dplyr::mutate(desc_total = sum(total_funding)) |>
       dplyr::ungroup() |>
       dplyr::mutate(
-        transaction_description = forcats::fct_reorder(.data$transaction_description, .data$desc_total, .desc = TRUE)
+        transaction_description = forcats::fct_reorder(transaction_description, desc_total, .desc = TRUE)
       )
     
     # For year dimension, ensure proper ordering on x-axis
@@ -278,8 +267,8 @@ show_donor_transaction_desc <- function(donor_name,
       heatmap_data,
       ggplot2::aes(
         x = !!rlang::sym(by),
-        y = .data$transaction_description,
-        fill = .data$total_funding
+        y = transaction_description,
+        fill = total_funding
       )
     ) +
       ggplot2::geom_tile(color = "white", linewidth = 0.5) +
@@ -288,7 +277,7 @@ show_donor_transaction_desc <- function(donor_name,
         high = "#0072BC",
         labels = scales::label_number(scale_cut = scales::cut_short_scale())
       ) +
-      unhcrthemes::theme_unhcr(grid = FALSE, axis = "xy", font_size = 18) +
+      unhcrthemes::theme_unhcr(grid = FALSE, axis = "xy", font_size = 20) +
       ggplot2::theme(
         axis.text.x = ggplot2::element_text(angle = 45, vjust = 1, hjust = 1)
       ) +

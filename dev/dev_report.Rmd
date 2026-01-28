@@ -1,0 +1,236 @@
+---
+title: "AI Powered Reports"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r development, message=FALSE, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message=FALSE, 
+  warning=FALSE,
+  fig.width = 8,
+  fig.asp = 0.718,
+  out.width = "90%"
+)
+library(testthat)
+```
+
+```{r development-load, message=FALSE, warning=FALSE, include=FALSE}
+# Load already included functions if relevant
+pkgload::load_all(export_all = FALSE)
+```
+
+
+
+```{r function-generate_report}
+#' Generate Quarto HTML / PDF Country Factsheets in Batch
+#'
+#' This function renders the 'Country_Factsheet' Quarto template for a list of
+#' countries, generating a report file for each.
+#'
+#' @param type either donor recipient or destination.
+#' @param name name of  donor recipient or destination if NULL batch process them
+#' @param top_n Top number of report to batch process based on total amount
+#'
+#' @importFrom dplyr filter select pull
+#' @importFrom quarto quarto_render
+#' @importFrom here here
+#'
+#' @return links to genrated reports.
+#'
+#' @export
+generate_report <- function(type="donor",
+                            name=NULL,
+                            top_n = 20) {
+  
+  template_path = system.file(paste0("_extension/", type,"/template.qmd"), 
+                                package = "iati")
+  ## Create the outfolder if it does not exist
+  folder <- "docs/reports"
+  output_dir <- here::here(folder)
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+    message("Created output directory: ", output_dir)
+  }
+  
+  # Ensure template exists
+  if (!file.exists(template_path)) {
+    stop("Quarto template not found at: ", template_path, 
+         ". Please check the template_path argument.")
+  }
+  
+  # --- Loop through each country for batch rendering ---
+  if ( is.null(name)){
+    if(type == "donor") {
+      name <- iati::dataTransaction |> 
+             dplyr::left_join(iati::dataActivity, by= c("iati_identifier")) |> 
+            dplyr::filter(  year == 2025 & 
+                            transaction_type_name == "Incoming Commitment") |>
+            dplyr::group_by(year, transaction_provider_org) |>
+            dplyr::summarise( transaction_value_USD = sum(transaction_value_USD , na.rm = TRUE)) |>
+            dplyr::arrange( desc(transaction_value_USD)) |>
+            dplyr::slice_head(n =50) |>
+            dplyr::pull( transaction_provider_org)
+    }
+  
+# c("United States of America (Government of)", "Mastercard Foundation", 
+# "Private donors", "European Commission - Humanitarian Aid & Civil Protection", 
+# "Denmark - Ministry of Foreign Affairs, Danida", "European Commission - Service for Foreign Policy Instruments", 
+# "European Commission - Neighbourhood and Enlargement Negotiations", 
+# "Norad - Norwegian Agency for Development Cooperation", "Netherlands - Ministry of Foreign Affairs", 
+# "Germany - Federal Foreign Office", "Ministry of Foreign Affairs of  Japan", 
+# "UK - Foreign, Commonwealth and Development Office", "Sweden, through Swedish International Development Cooperation Agency (Sida)", 
+# "Canada - Global Affairs Canada | Affaires mondiales Canada", 
+# "Switzerland - Swiss Agency for Development and Cooperation (SDC)", 
+# "España con ACNUR", "Republic of Korea", "Italy (Government of)", 
+# "Japan for UNHCR", "Ireland - Department of Foreign Affairs", 
+# "France - Ministry for Europe and Foreign Affairs", "Australia - Department of  Foreign Affairs and Trade", 
+# "United Nations Regular Budget", "United Nations Central Emergency Response Fund (CERF)", 
+# "UNO-Flüchtlingshilfe", "Finland - Ministry for Foreign Affairs", 
+# "USA for UNHCR", "Germany - Ministry for Economic Cooperation and Development", 
+# "Belgian Development Cooperation", "Austria (Government of)", 
+# "Luxembourg (Government of)", "Sweden for UNHCR", "Spain (Government of)", 
+# "Canada (Government of)", "AICS - Agenzia Italiana per la Cooperazione allo Sviluppo / Italian Agency for Cooperation and Development", 
+# "Switzerland (Government of)", "African Development Bank", "United Arab Emirates (Government of)", 
+# "Qatar (Government of)", "Australia for UNHCR", "UK for UNHCR", 
+# "China (Government of)", "New Zealand - Ministry of Foreign Affairs and Trade - New Zealand Aid Programme", 
+# "Saudi Arabia (Government of)", "Iceland (Government of)", "Kuwait (Government of)", 
+# "Spain - Ministry of Foreign Affairs and Cooperation", "UN Joint Programmes (Government of)", 
+# "Japan International Cooperation Agency (JICA)", "Spain (Autonomous authorities of)"
+# )
+    
+    
+    if(type == "operation") {
+      name <-  data |>
+                sort()|>
+                unique()
+    }
+  } 
+  links <- c()
+  for ( this in name) {
+    # this <- name
+    # 2. Define Output Filename and Path
+    thisslug <- slugify(this)
+    output_filename <- paste0('iatiAnalysis-', type, '-', thisslug , '.html')
+    output_filepath <- here::here(folder,output_filename )
+
+    # 3. Render the Quarto document
+    tryCatch({
+      quarto::quarto_render(
+        input = template_path,
+        output_file = output_filename,
+        # Pass parameters to the YAML header and R code chunks
+        execute_params = list(name = this )
+      )
+      # Move the file
+     file.rename(from = here::here( system.file(paste0("_extension/", type),
+                                package = "iati"),
+                                output_filename ),
+                 to = output_filepath)
+      message("Successfully generated: ", output_filename)
+    # Link
+      link <- paste0( "[Profile Report for ",
+                      type,": ", 
+                      this, "](../reports/",
+                      output_filename,")")
+    }, error = function(e) {
+      warning("Failed to render report for ", this, ": ", e$message)
+    })
+    # links
+    links <- c(links, link)
+  }
+  
+  return(links)
+}
+```
+  
+```{r example-generate_report, message=FALSE, warning=FALSE, include=FALSE}
+
+# linkdonor <- generate_report(type = "donor", top_n = 50)
+# dput(linkdonor)
+linkdonor <-   c("[Profile Report for donor: United States of America (Government of)](../reports/iatiAnalysis-donor-united-states-of-america-government-of.html)", 
+"[Profile Report for donor: Mastercard Foundation](../reports/iatiAnalysis-donor-mastercard-foundation.html)", 
+"[Profile Report for donor: Private donors](../reports/iatiAnalysis-donor-private-donors.html)", 
+"[Profile Report for donor: European Commission - Humanitarian Aid & Civil Protection](../reports/iatiAnalysis-donor-european-commission-humanitarian-aid-civil-protection.html)", 
+"[Profile Report for donor: Denmark - Ministry of Foreign Affairs, Danida](../reports/iatiAnalysis-donor-denmark-ministry-of-foreign-affairs-danida.html)", 
+"[Profile Report for donor: European Commission - Service for Foreign Policy Instruments](../reports/iatiAnalysis-donor-european-commission-service-for-foreign-policy-instruments.html)", 
+"[Profile Report for donor: European Commission - Neighbourhood and Enlargement Negotiations](../reports/iatiAnalysis-donor-european-commission-neighbourhood-and-enlargement-negotiations.html)", 
+"[Profile Report for donor: Norad - Norwegian Agency for Development Cooperation](../reports/iatiAnalysis-donor-norad-norwegian-agency-for-development-cooperation.html)", 
+"[Profile Report for donor: Netherlands - Ministry of Foreign Affairs](../reports/iatiAnalysis-donor-netherlands-ministry-of-foreign-affairs.html)", 
+"[Profile Report for donor: Germany - Federal Foreign Office](../reports/iatiAnalysis-donor-germany-federal-foreign-office.html)", 
+"[Profile Report for donor: Ministry of Foreign Affairs of  Japan](../reports/iatiAnalysis-donor-ministry-of-foreign-affairs-of-japan.html)", 
+"[Profile Report for donor: UK - Foreign, Commonwealth and Development Office](../reports/iatiAnalysis-donor-uk-foreign-commonwealth-and-development-office.html)", 
+"[Profile Report for donor: Sweden, through Swedish International Development Cooperation Agency (Sida)](../reports/iatiAnalysis-donor-sweden-through-swedish-international-development-cooperation-agency-sida.html)", 
+"[Profile Report for donor: Canada - Global Affairs Canada | Affaires mondiales Canada](../reports/iatiAnalysis-donor-canada-global-affairs-canada-affaires-mondiales-canada.html)", 
+"[Profile Report for donor: Switzerland - Swiss Agency for Development and Cooperation (SDC)](../reports/iatiAnalysis-donor-switzerland-swiss-agency-for-development-and-cooperation-sdc.html)", 
+"[Profile Report for donor: España con ACNUR](../reports/iatiAnalysis-donor-espana-con-acnur.html)", 
+"[Profile Report for donor: Republic of Korea](../reports/iatiAnalysis-donor-republic-of-korea.html)", 
+"[Profile Report for donor: Italy (Government of)](../reports/iatiAnalysis-donor-italy-government-of.html)", 
+"[Profile Report for donor: Japan for UNHCR](../reports/iatiAnalysis-donor-japan-for-unhcr.html)", 
+"[Profile Report for donor: Ireland - Department of Foreign Affairs](../reports/iatiAnalysis-donor-ireland-department-of-foreign-affairs.html)", 
+"[Profile Report for donor: France - Ministry for Europe and Foreign Affairs](../reports/iatiAnalysis-donor-france-ministry-for-europe-and-foreign-affairs.html)", 
+"[Profile Report for donor: Australia - Department of  Foreign Affairs and Trade](../reports/iatiAnalysis-donor-australia-department-of-foreign-affairs-and-trade.html)", 
+"[Profile Report for donor: United Nations Regular Budget](../reports/iatiAnalysis-donor-united-nations-regular-budget.html)", 
+"[Profile Report for donor: United Nations Central Emergency Response Fund (CERF)](../reports/iatiAnalysis-donor-united-nations-central-emergency-response-fund-cerf.html)", 
+"[Profile Report for donor: UNO-Flüchtlingshilfe](../reports/iatiAnalysis-donor-uno-fluchtlingshilfe.html)", 
+"[Profile Report for donor: Finland - Ministry for Foreign Affairs](../reports/iatiAnalysis-donor-finland-ministry-for-foreign-affairs.html)", 
+"[Profile Report for donor: USA for UNHCR](../reports/iatiAnalysis-donor-usa-for-unhcr.html)", 
+"[Profile Report for donor: Germany - Ministry for Economic Cooperation and Development](../reports/iatiAnalysis-donor-germany-ministry-for-economic-cooperation-and-development.html)", 
+"[Profile Report for donor: Belgian Development Cooperation](../reports/iatiAnalysis-donor-belgian-development-cooperation.html)", 
+"[Profile Report for donor: Austria (Government of)](../reports/iatiAnalysis-donor-austria-government-of.html)", 
+"[Profile Report for donor: Luxembourg (Government of)](../reports/iatiAnalysis-donor-luxembourg-government-of.html)", 
+"[Profile Report for donor: Sweden for UNHCR](../reports/iatiAnalysis-donor-sweden-for-unhcr.html)", 
+"[Profile Report for donor: Spain (Government of)](../reports/iatiAnalysis-donor-spain-government-of.html)", 
+"[Profile Report for donor: Canada (Government of)](../reports/iatiAnalysis-donor-canada-government-of.html)", 
+"[Profile Report for donor: AICS - Agenzia Italiana per la Cooperazione allo Sviluppo / Italian Agency for Cooperation and Development](../reports/iatiAnalysis-donor-aics-agenzia-italiana-per-la-cooperazione-allo-sviluppo-italian-agency-for-cooperation-and-development.html)", 
+"[Profile Report for donor: Switzerland (Government of)](../reports/iatiAnalysis-donor-switzerland-government-of.html)", 
+"[Profile Report for donor: African Development Bank](../reports/iatiAnalysis-donor-african-development-bank.html)", 
+"[Profile Report for donor: United Arab Emirates (Government of)](../reports/iatiAnalysis-donor-united-arab-emirates-government-of.html)", 
+"[Profile Report for donor: Qatar (Government of)](../reports/iatiAnalysis-donor-qatar-government-of.html)", 
+"[Profile Report for donor: Australia for UNHCR](../reports/iatiAnalysis-donor-australia-for-unhcr.html)", 
+"[Profile Report for donor: UK for UNHCR](../reports/iatiAnalysis-donor-uk-for-unhcr.html)", 
+"[Profile Report for donor: China (Government of)](../reports/iatiAnalysis-donor-china-government-of.html)", 
+"[Profile Report for donor: New Zealand - Ministry of Foreign Affairs and Trade - New Zealand Aid Programme](../reports/iatiAnalysis-donor-new-zealand-ministry-of-foreign-affairs-and-trade-new-zealand-aid-programme.html)", 
+"[Profile Report for donor: Saudi Arabia (Government of)](../reports/iatiAnalysis-donor-saudi-arabia-government-of.html)", 
+"[Profile Report for donor: Iceland (Government of)](../reports/iatiAnalysis-donor-iceland-government-of.html)", 
+"[Profile Report for donor: Kuwait (Government of)](../reports/iatiAnalysis-donor-kuwait-government-of.html)", 
+"[Profile Report for donor: Spain - Ministry of Foreign Affairs and Cooperation](../reports/iatiAnalysis-donor-spain-ministry-of-foreign-affairs-and-cooperation.html)", 
+"[Profile Report for donor: UN Joint Programmes (Government of)](../reports/iatiAnalysis-donor-un-joint-programmes-government-of.html)", 
+"[Profile Report for donor: Japan International Cooperation Agency (JICA)](../reports/iatiAnalysis-donor-japan-international-cooperation-agency-jica.html)", 
+"[Profile Report for donor: Spain (Autonomous authorities of)](../reports/iatiAnalysis-donor-spain-autonomous-authorities-of.html)"
+)
+
+# linkoperation <- generate_report(type = "operation")
+# dput(linkoperation)
+# linkoperation <- c()
+
+##  Operations 
+
+##`r paste0("- ", linkoperation, collapse = "\n")`
+
+```
+
+##  Donors 
+
+`r paste0("- ", linkdonor, collapse = "\n")`
+
+
+
+  
+```{r tests-generate_report}
+test_that("generate_report works", {
+  expect_true(inherits(generate_report, "function")) 
+})
+```
+  
+
+
+```{r development-inflate, eval=FALSE}
+# Run but keep eval=FALSE to avoid infinite loop
+# Execute in the console directly
+fusen::inflate(flat_file = "dev/dev_report.Rmd", vignette_name = "AI Powered Reports", check = FALSE)
+```
+

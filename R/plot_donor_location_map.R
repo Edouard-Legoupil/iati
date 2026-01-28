@@ -63,12 +63,12 @@ plot_donor_location_map <- function(donor_name,
   filtered_transactions <- iati::dataTransaction |>
     dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
     dplyr::filter(
-      .data$transaction_type_name == "Incoming Commitment",
-      .data$transaction_provider_org == donor_name
+      transaction_type_name == "Incoming Commitment",
+      transaction_provider_org == donor_name
     ) 
 
   if (!is.null(year)) {
-    filtered_transactions <- filtered_transactions |> dplyr::filter(.data$year %in% .env$year)
+    filtered_transactions <- filtered_transactions |> dplyr::filter(year %in% .env$year)
   }
 
   if (nrow(filtered_transactions) == 0) {
@@ -79,12 +79,12 @@ plot_donor_location_map <- function(donor_name,
   all_transactions <- iati::dataTransaction |>
     dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
     dplyr::filter(
-      .data$transaction_type_name == "Incoming Commitment",
-      .data$transaction_provider_org == donor_name
+      transaction_type_name == "Incoming Commitment",
+      transaction_provider_org == donor_name
     ) 
   
   if (!is.null(year)) {
-    all_transactions <- all_transactions |> dplyr::filter(.data$year %in% .env$year)
+    all_transactions <- all_transactions |> dplyr::filter(year %in% .env$year)
   }
 
   # Join with location data and aggregate funding using iati_identifier
@@ -196,11 +196,11 @@ plot_donor_location_map <- function(donor_name,
   all_donor_locations_funding <- all_transactions |>
     dplyr::left_join(mainLocation |> 
                        dplyr::select(main_location_ref, iati_identifier), by = "iati_identifier") |>
-    dplyr::filter( !is.na(.data$transaction_value_USD)) |>
+    dplyr::filter( !is.na(transaction_value_USD)) |>
     dplyr::filter(! is.na(main_location_ref)) |>
-    dplyr::group_by(.data$main_location_ref) |>
+    dplyr::group_by(main_location_ref) |>
     dplyr::summarise(
-      total_funding_all_donors = sum(.data$transaction_value_USD, na.rm = TRUE),
+      total_funding_all_donors = sum(transaction_value_USD, na.rm = TRUE),
       .groups = "drop"
     )  
    # sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) # WGS 84
@@ -209,10 +209,10 @@ plot_donor_location_map <- function(donor_name,
   donor_locations_funding <- filtered_transactions |>
     dplyr::left_join(mainLocation |>
                        dplyr::select(main_location_ref, iati_identifier), by = "iati_identifier") |>
-    dplyr::filter( !is.na(.data$transaction_value_USD)) |>
-    dplyr::group_by(.data$main_location_ref) |>
+    dplyr::filter( !is.na(transaction_value_USD)) |>
+    dplyr::group_by(main_location_ref) |>
     dplyr::summarise(
-      total_funding_donor = sum(.data$transaction_value_USD, na.rm = TRUE),
+      total_funding_donor = sum(transaction_value_USD, na.rm = TRUE),
       .groups = "drop"
     )  
 
@@ -232,16 +232,16 @@ plot_donor_location_map <- function(donor_name,
     dplyr::filter(! (is.na(main_location_ref))) |>
      sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) |> # WGS 84
     dplyr::mutate(
-      total_funding_donor = tidyr::replace_na(.data$total_funding_donor, 0),
+      total_funding_donor = tidyr::replace_na(total_funding_donor, 0),
       # Add geometry back from all_donor_locations_funding
-      geometry = .data$geometry # This ensures sf object maintains its geometry
+      geometry = geometry # This ensures sf object maintains its geometry
     ) |>
     # Transform to target CRS after full_join
     sf::st_transform(crs = target_crs)
 
   # Filter out locations with no funding from either (after joins and NA replacements)
   map_data <- map_data |>
-    dplyr::filter(.data$total_funding_all_donors > 0 | .data$total_funding_donor > 0)
+    dplyr::filter(total_funding_all_donors > 0 | total_funding_donor > 0)
   
   if (nrow(map_data) == 0) {
     stop("No locations with funding data after joining and filtering.")
@@ -249,7 +249,7 @@ plot_donor_location_map <- function(donor_name,
 
   # Identify top locations for labeling
   top_locations_labels <- map_data |>
-    dplyr::arrange(dplyr::desc(.data$total_funding_donor)) |>
+    dplyr::arrange(dplyr::desc(total_funding_donor)) |>
     dplyr::slice_head(n = top_n_locations) |>
     dplyr::mutate(
       label = paste0( "", scales::label_number(
@@ -274,8 +274,8 @@ plot_donor_location_map <- function(donor_name,
     
     # Proportional symbols for ALL donor funding (background circles)
     ggplot2::geom_sf(
-      data = map_data |> dplyr::filter(.data$total_funding_all_donors > 0),
-      ggplot2::aes(size = .data$total_funding_all_donors),
+      data = map_data |> dplyr::filter(total_funding_all_donors > 0),
+      ggplot2::aes(size = total_funding_all_donors),
       shape = 21, fill = all_donors_color, color = "black", stroke = 0.5,
       alpha = 0.7,
       show.legend = "point"
@@ -283,8 +283,8 @@ plot_donor_location_map <- function(donor_name,
     
     # Proportional symbols for specific donor funding (foreground circles)
     ggplot2::geom_sf(
-      data = map_data |> dplyr::filter(.data$total_funding_donor > 0),
-      ggplot2::aes(size = .data$total_funding_donor),
+      data = map_data |> dplyr::filter(total_funding_donor > 0),
+      ggplot2::aes(size = total_funding_donor),
       shape = 21, fill = donor_color, color = donor_color, stroke = 0.5,
       alpha = 0.8,
       show.legend = "point"
@@ -299,7 +299,7 @@ plot_donor_location_map <- function(donor_name,
     # Labels for top locations
     ggrepel::geom_label_repel(
       data = top_locations_labels,
-      ggplot2::aes(label = .data$label, geometry = .data$geometry),
+      ggplot2::aes(label = label, geometry = geometry),
       stat = "sf_coordinates",
       min.segment.length = 0,
       box.padding = 0.5,
@@ -307,27 +307,21 @@ plot_donor_location_map <- function(donor_name,
       force = 1,
       size = 7,
       direction = "both",
-      bg.color = "white",
-      bg.r = 0.1,
       color = "black"
     ) +
     
-    unhcrthemes::theme_unhcr(font_size = 26) +
+    unhcrthemes::theme_unhcr(void = TRUE, 
+                             legend = FALSE,
+                             font_size = 20) +
     ggplot2::theme(
       panel.background = ggplot2::element_rect(fill = ocean_color, color = NA),
-      plot.background = ggplot2::element_rect(fill = ocean_color, color = NA),
-      axis.title = ggplot2::element_blank(),
-      axis.text = ggplot2::element_blank(),
-      axis.ticks = ggplot2::element_blank(),
-      legend.position = "bottom",
-      panel.grid.major = ggplot2::element_line(color = "transparent") # Remove grid lines
+      plot.background = ggplot2::element_rect(fill = ocean_color, color = NA)
     ) +
     ggplot2::labs(
-      title = paste("Donor Geographic Focus for ", donor_name),
-      subtitle = paste("Funding Activities Main Locations (", paste(range(year), collapse = "-"), ")"),
+      title = paste("Geographic Focus for ", donor_name, "|", year),
       caption = paste0(
-        "White circle: Total funding from all donors. UNHCR blue circle: Funding from ", donor_name, ".\n",
-        "Size indicates amount. Difference in circle size shows donor's share.\n",
+        # "White circle: Total funding from all donors. UNHCR blue circle: Funding from ", donor_name, ".\n",
+        # "Size indicates amount. Difference in circle size shows donor's share.\n",
         "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
       )
     )

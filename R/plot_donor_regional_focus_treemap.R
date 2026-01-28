@@ -28,34 +28,23 @@
 #' # Example usage:
 #' plot_donor_regional_focus_treemap(
 #'   donor_name = "Private donors",
-#'   year = c(2023, 2024, 2025),
-#'   label_font_size = 3
+#'   year =  2025 
 #' )
-#'
-#' plot_donor_regional_focus_treemap(
-#'   donor_name = "Private donors",
-#'   year = 2025,
-#'   label_font_size = 5
-#' )
+#'  
 plot_donor_regional_focus_treemap <- function(donor_name,
-                                              year = NULL,
-                                              label_font_size = 4) {
+                                              year = NULL ) {
 
-  # ---- 0) Basic checks ----
-  if (!is.numeric(label_font_size) || length(label_font_size) != 1 || label_font_size < 1) {
-    stop("`label_font_size` must be a single numeric value >= 1.")
-  }
-
+ 
   # ---- 1) Get IATI data ----
   df <- iati::dataTransaction |>
     dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
     dplyr::filter(
-      .data$transaction_type_name == "Incoming Commitment"
+      transaction_type_name == "Incoming Commitment"
     )
 
   # Filtering by year
   if (!is.null(year)) {
-    df <- df |> dplyr::filter(.data$year %in% .env$year)
+    df <- df |> dplyr::filter(year %in% .env$year)
   }
 
   if (nrow(df) == 0) {
@@ -64,7 +53,7 @@ plot_donor_regional_focus_treemap <- function(donor_name,
   
   # Ensure necessary columns are not NA
   df <- df |>
-    dplyr::filter(!is.na(.data$unhcr_region2), !is.na(.data$activity_name), !is.na(.data$transaction_value_USD))
+    dplyr::filter(!is.na(unhcr_region), !is.na(activity_name), !is.na(transaction_value_USD))
 
   if (nrow(df) == 0) {
     stop("No data remaining after filtering out NA values for region, programme, or funding.")
@@ -72,10 +61,10 @@ plot_donor_regional_focus_treemap <- function(donor_name,
 
   # ---- 2) Aggregate data for treemap ----
   treemap_data <- df |>
-    dplyr::group_by(.data$unhcr_region2, .data$activity_name) |>
+    dplyr::group_by(unhcr_region, activity_name) |>
     dplyr::summarise(
-      total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
-      ## total funded by the donor - ,   .data$transaction_provider_org == donor_name
+      total_funding = sum(transaction_value_USD, na.rm = TRUE),
+      ## total funded by the donor - ,   transaction_provider_org == donor_name
       
       .groups = "drop"
     ) |>
@@ -85,15 +74,15 @@ plot_donor_regional_focus_treemap <- function(donor_name,
         dplyr::filter( transaction_provider_org == donor_name) |>
         dplyr::group_by(activity_name) |>
         dplyr::summarise(
-            total_funding_donor = sum(.data$transaction_value_USD, na.rm = TRUE),
+            total_funding_donor = sum(transaction_value_USD, na.rm = TRUE),
       .groups = "drop")|>    dplyr::ungroup(),
     by= c("activity_name")) |>
     dplyr::mutate( 
       share = total_funding_donor/ total_funding  ,
-      label_text =  paste0(.data$activity_name, " - ", 
-                           scales::label_number(accuracy = 0.1, scale_cut = scales::cut_short_scale())(.data$total_funding_donor), 
+      label_text =  paste0(activity_name, " - ", 
+                           scales::label_number(accuracy = 0.1, scale_cut = scales::cut_short_scale())(total_funding_donor), 
                            "$ (",
-                           scales::label_percent(accuracy = 0.1)(.data$share), 
+                           scales::label_percent(accuracy = 0.1)(share), 
                            ")"))|>
     dplyr::filter( !(is.na(total_funding_donor))  )
   
@@ -107,33 +96,66 @@ plot_donor_regional_focus_treemap <- function(donor_name,
   }
   
   # Define colors for regions (first level of treemap)
-  region_colors <- unhcrthemes::unhcr_pal(n = length(unique(treemap_data$unhcr_region2)), name = "pal_unhcr")
+  region_colors <- unhcrthemes::unhcr_pal(n = length(unique(treemap_data$unhcr_region)), name = "pal_unhcr")
   
   # ---- 3) Plotting ----
   p <- ggplot2::ggplot(treemap_data,
-                        ggplot2::aes(area = .data$total_funding_donor,
-                                     fill = .data$unhcr_region2,
-                                     subgroup = .data$unhcr_region2,
-                                     label = .data$label_text)) +
+                        ggplot2::aes(area = total_funding_donor,
+                                     fill = unhcr_region,
+                                     subgroup = unhcr_region,
+                                     label = label_text)) +
     treemapify::geom_treemap() +
     treemapify::geom_treemap_subgroup_border(colour = "white", size = 3) +
-    treemapify::geom_treemap_subgroup_text(place = "centre", grow = TRUE,
-                                           alpha = 0.5, colour = "black",
-                                           fontface = "bold", min.size = 0) +
-    treemapify::geom_treemap_text(
-      colour = "white",
-      place = "centre",
-      size = label_font_size,
-      family = "Lato",
-      grow = TRUE
-    ) +
+      # Use multiple text layers with different placements
+      treemapify::geom_treemap_subgroup_text(place = "centre",
+                                             grow = T, 
+                                             alpha = 0.5, 
+                                             colour ="black", 
+                                             fontface = "italic", 
+                                             min.size = 0) +
+    
+      treemapify::geom_treemap_text(colour = "white", 
+                                    place = "topleft", 
+                                    reflow = T) + 
+     # treemapify::geom_treemap_subgroup_text(
+     #    place = "centre", 
+     #    grow = TRUE,
+     #    alpha = 0.5, 
+     #    colour = "black",
+     #    fontface = "bold", 
+     #    min.size = 0
+     #  ) +
+  
+      # treemapify::geom_treemap_text(
+      #   colour = "white",
+      #   place = "topleft",      # Different placement for first label
+      #   size = label_font_size * 0.9,  # Slightly smaller for corner placement
+      #   family = "Lato",
+      #   grow = FALSE,           # Don't let it grow
+      #   padding.x = grid::unit(2, "mm"),  # Add padding
+      #   padding.y = grid::unit(2, "mm"),
+      #   reflow = TRUE,          # Reflow text if too long
+      #   min.size = 4            # Minimum font size
+      # ) +
+      # # Optional: Add secondary text with smaller size for additional info
+      # treemapify::geom_treemap_text(
+      #   ggplot2::aes(label = secondary_label),  # Create a secondary label column
+      #   colour = "white",
+      #   place = "bottomright",
+      #   size = label_font_size * 0.7,
+      #   family = "Lato",
+      #   alpha = 0.8,
+      #   grow = FALSE,
+      #   min.size = 2
+      # ) +
     ggplot2::scale_fill_manual(values = region_colors) +
-    unhcrthemes::theme_unhcr(font_size = 14) +
-    ggplot2::theme(legend.position = "none") +
+    unhcrthemes::theme_unhcr(void = TRUE,
+                             legend = FALSE, 
+                             font_size = 20) +
     ggplot2::labs(
-      title = paste("Donor Portfolio : ", donor_name, " (", paste(range(year), collapse = "-"), ")"),
-      subtitle = paste("Includes Total Funding (Share of Donor's Funding within this activity) "),
-      caption = "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
+      title = paste("Portfolio of ", donor_name, " |", paste(year), ""),
+
+      caption = "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI) - Includes Total Funding (Share of Donor's Funding within this activity)"
     )
 
   return(p)

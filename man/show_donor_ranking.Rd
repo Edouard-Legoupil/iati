@@ -2,7 +2,7 @@
 % Please edit documentation in R/show_donor_ranking.R
 \name{show_donor_ranking}
 \alias{show_donor_ranking}
-\title{Donor ranking by funding volume (lollipop) with optional WB population/GDP weighting}
+\title{Generate Donor Ranking Visualizations with Scoring Metrics}
 \usage{
 show_donor_ranking(
   donor_name = NULL,
@@ -16,14 +16,78 @@ show_donor_ranking(
   verbose = TRUE
 )
 }
+\arguments{
+\item{donor_name}{Character. Specific donor to highlight in the visualization.
+If NULL, all donors are shown in equal color. For single-year scoring, the
+highlighted donor appears in blue with rank labels.}
+
+\item{top_n_display}{Integer. Number of top donors to display in multi-year
+trajectory plots (ranked by reference year total).}
+
+\item{year}{Integer or vector of integers. Year(s) to analyze. If NULL, uses
+the latest available year. If multiple years provided, creates trajectory plot.}
+
+\item{ctr_name}{Character vector. Filter for specific recipient country/countries.
+If NULL, includes all countries.}
+
+\item{weight_by}{Character. Weighting method for multi-year trajectory:
+- "none": Raw USD values
+- "population": USD per capita
+- "gdp": USD per GDP
+- "population_gdp": USD per capita per GDP}
+
+\item{donor_country_map}{Named character vector. Optional mapping from donor
+organization names to World Bank country names for GDP/population lookups.
+Format: c("donor_org" = "country_name")}
+
+\item{wb_lang}{Character. Language for World Bank country names ("en", "fr", etc.).}
+
+\item{top_n_earmarking}{Integer. For single-year scoring, number of top
+earmarking categories to display (not currently used in scoring mode).}
+
+\item{verbose}{Logical. If TRUE, prints progress messages and data summaries.}
+}
+\value{
+A ggplot2 object. The plot type depends on input parameters:
+  - Multi-year: Ranking trajectory with connected points
+  - Single-year: Lollipop scoring plot with three metrics (0-100 scale)
+}
 \description{
-See original docs above. In single-year earmarking mode, this version computes:
- - Total USD, Unearmarked USD, USD/GDP
- - Scales each to a 0–100 score across donors (min–max)
- - Computes ranks (best=1) per metric
- - Plots x=metric type, y=score; all donors grey, highlighted donor blue with rank labels.
+This function creates two types of visualizations:
+1. **Multi-year trajectory**: Shows donor ranking changes across multiple years
+2. **Single-year scoring**: Creates a lollipop plot comparing donors across three
+   scaled metrics (0-100) with optional World Bank population/GDP weighting
+}
+\details{
+In single-year mode, the function computes:
+- **Total USD**: All incoming commitments
+- **Unearmarked USD**: Funds marked as "unearmarked" (case-insensitive)
+- **USD/GDP**: Total USD divided by donor country GDP (from World Bank)
+Each metric is scaled 0-100 across donors (min-max scaling) and ranks are computed.
 }
 \examples{
+# Single-year scoring for all donors
+show_donor_ranking(year = 2023)
+
+# Highlight specific donor in single-year scoring
+show_donor_ranking(donor_name = "USA", year = 2023)
+
+# Multi-year trajectory for top 15 donors
+show_donor_ranking(year = 2020:2023, top_n_display = 15)
+
+# With country filtering
+show_donor_ranking(
+  year = 2023,
+  ctr_name = c("Ukraine", "Syria"),
+  donor_name = "Germany"
+)
+
+# With GDP weighting in multi-year mode
+show_donor_ranking(
+  year = 2020:2022,
+  weight_by = "gdp",
+  top_n_display = 10
+)
 # Example usage:
 show_donor_ranking(  
    year = 2025,

@@ -8,9 +8,15 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
+
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>",
+  message=FALSE, 
+  warning=FALSE,
+  fig.width = 8,
+  fig.asp = 0.718,
+  out.width = "90%"
 )
 ```
 
@@ -100,7 +106,6 @@ profile_data(p)
 ## generate_description
 
 ```{r example-generate_description}
-
 library(ggplot2)
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
@@ -116,21 +121,26 @@ story <- generate_description(structure= extract_structure(p),
                       model = "gpt-4.1-mini",
                       max_tokens_short_desc = 30,
                       max_tokens_long_desc= 500 ) 
+print(story$long_desc)
 ```
 
 
 
 ## generate_plot_story
-
  
 ```{r example-generate_plot_story}
-#| eval: no
-
+#| message: no
+#| warning: no
+#| fig.retina: 2.0
+#| fig.width: 8.0
+#| fig.asp: 0.818
+#| fig.align: center
+#| out.width: 90%
 
 library(ggplot2) 
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
-  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE) +
+  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, font_size = 23) +
   labs(
     title = "Vehicle Efficiency",
     subtitle = "Fuel consumption vs weight",
@@ -138,7 +148,6 @@ p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   )
 
 # generate_plot_story(p, provider = "ollama", model = "deepseek-r1")
-
 story <- generate_plot_story(
   p,
   provider = "azure",
@@ -149,9 +158,6 @@ story <- generate_plot_story(
 # To use as subtitle:
 p + ggplot2::labs(subtitle = story$short_desc)
 ```
-
-
-
 
 
 

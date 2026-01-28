@@ -23,7 +23,6 @@
 #' @importFrom jsonlite fromJSON
 #' @export
 #' @examples
-#'
 #' library(ggplot2)
 #' p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
 #'   geom_point() +
@@ -39,6 +38,7 @@
 #'                       model = "gpt-4.1-mini",
 #'                       max_tokens_short_desc = 30,
 #'                       max_tokens_long_desc= 500 ) 
+#' print(story$long_desc)
 generate_description <- function(structure,
                                  stats,
                                  provider = NULL,

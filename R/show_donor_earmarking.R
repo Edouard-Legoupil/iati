@@ -56,14 +56,14 @@ show_donor_earmarking <- function(donor_name,
 
   # Filtering (vector-friendly + safe evaluation)
   if (!is.null(year_filter)) {
-    df <- df |> dplyr::filter(.data$year %in% .env$year_filter)
+    df <- df |> dplyr::filter(year %in% .env$year_filter)
   }
   if (!is.null(programme_filter)) {
-    df <- df |> dplyr::filter(.data$programme_lab %in% .env$programme_filter)
+    df <- df |> dplyr::filter(programme_lab %in% .env$programme_filter)
   } else if (!is.null(ops_filter)) {
-    df <- df |> dplyr::filter(.data$iati_identifier_ops %in% .env$ops_filter)
+    df <- df |> dplyr::filter(iati_identifier_ops %in% .env$ops_filter)
   } else if (!is.null(country_filter)) {
-    df <- df |> dplyr::filter(.data$ctr_name %in% .env$country_filter)
+    df <- df |> dplyr::filter(ctr_name %in% .env$country_filter)
   }
 
   # Calculate total funding for the title
@@ -81,10 +81,10 @@ show_donor_earmarking <- function(donor_name,
 
     "global" = {
       df |>
-        dplyr::filter(!is.na(.data$earmarking_name)) |>
-        dplyr::group_by(.data$earmarking_name) |>
+        dplyr::filter(!is.na(earmarking_name)) |>
+        dplyr::group_by(earmarking_name) |>
         dplyr::summarise(
-          total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+          total_funding = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
         dplyr::arrange(dplyr::desc(total_funding)) |>
@@ -94,72 +94,60 @@ show_donor_earmarking <- function(donor_name,
     "date" = {
       # For date grouping, order by date chronologically
       df |>
-        dplyr::filter(!is.na(.data$earmarking_name), !is.na(.data$year)) |>
-        dplyr::group_by(.data$year, .data$earmarking_name) |>
+        dplyr::filter(!is.na(earmarking_name), !is.na(year)) |>
+        dplyr::group_by(year, earmarking_name) |>
         dplyr::summarise(
-          total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+          total_funding = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
         dplyr::mutate(
-          x = factor(.data$year, levels = sort(unique(.data$year)))
+          x = factor(year, levels = sort(unique(year)))
         )
     },
 
     "region" = {
       # Calculate region totals for ordering
       region_totals <- df |>
-        dplyr::mutate(
-          unhcr_region = dplyr::case_when(
-            is.na(.data$unhcr_region) ~ "global/HQ",
-            trimws(.data$unhcr_region) == "" ~ "global/HQ",
-            TRUE ~ .data$unhcr_region
-          )) |>
-        dplyr::filter(!is.na(.data$unhcr_region), !is.na(.data$earmarking_name)) |>
-        dplyr::group_by(.data$unhcr_region) |>
+        dplyr::filter(!is.na(unhcr_region), !is.na(earmarking_name)) |>
+        dplyr::group_by(unhcr_region) |>
         dplyr::summarise(
-          region_total = sum(.data$transaction_value_USD, na.rm = TRUE),
+          region_total = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
         dplyr::arrange(dplyr::desc(region_total))
       
       df |>
-        dplyr::mutate(
-          unhcr_region = dplyr::case_when(
-            is.na(.data$unhcr_region) ~ "global/HQ",
-            trimws(.data$unhcr_region) == "" ~ "global/HQ",
-            TRUE ~ .data$unhcr_region
-          )) |>
-        dplyr::filter(!is.na(.data$unhcr_region), !is.na(.data$earmarking_name)) |>
-        dplyr::group_by(.data$unhcr_region, .data$earmarking_name) |>
+        dplyr::filter(!is.na(unhcr_region), !is.na(earmarking_name)) |>
+        dplyr::group_by(unhcr_region, earmarking_name) |>
         dplyr::summarise(
-          total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+          total_funding = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
         dplyr::mutate(
-          x = factor(.data$unhcr_region, levels = rev(region_totals$unhcr_region))
+          x = factor(unhcr_region, levels = rev(region_totals$unhcr_region))
         )
     },
 
     "country" = {
       # Calculate country totals for ordering
       country_totals <- df |>
-        dplyr::filter(!is.na(.data$ctr_name), !is.na(.data$earmarking_name)) |>
-        dplyr::group_by(.data$ctr_name) |>
+        dplyr::filter(!is.na(ctr_name), !is.na(earmarking_name)) |>
+        dplyr::group_by(ctr_name) |>
         dplyr::summarise(
-          country_total = sum(.data$transaction_value_USD, na.rm = TRUE),
+          country_total = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
         dplyr::arrange(dplyr::desc(country_total))
       
       df |>
-        dplyr::filter(!is.na(.data$ctr_name), !is.na(.data$earmarking_name)) |>
-        dplyr::group_by(.data$ctr_name, .data$earmarking_name) |>
+        dplyr::filter(!is.na(ctr_name), !is.na(earmarking_name)) |>
+        dplyr::group_by(ctr_name, earmarking_name) |>
         dplyr::summarise(
-          total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+          total_funding = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
         dplyr::mutate(
-          x = factor(.data$ctr_name, levels = rev(country_totals$ctr_name))
+          x = factor(ctr_name, levels = rev(country_totals$ctr_name))
         )
     },
 
@@ -167,24 +155,24 @@ show_donor_earmarking <- function(donor_name,
       # Calculate sector totals for ordering
       sector_totals <- df |>
         dplyr::left_join(iati::dataSector, by = "iati_identifier") |>
-        dplyr::filter(!is.na(.data$sector_desc), !is.na(.data$earmarking_name)) |>
-        dplyr::group_by(.data$sector_desc) |>
+        dplyr::filter(!is.na(sector_desc), !is.na(earmarking_name)) |>
+        dplyr::group_by(sector_desc) |>
         dplyr::summarise(
-          sector_total = sum(.data$transaction_value_USD, na.rm = TRUE),
+          sector_total = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
         dplyr::arrange(dplyr::desc(sector_total))
       
       df |>
         dplyr::left_join(iati::dataSector, by = "iati_identifier") |>
-        dplyr::filter(!is.na(.data$sector_desc), !is.na(.data$earmarking_name)) |>
-        dplyr::group_by(.data$sector_desc, .data$earmarking_name) |>
+        dplyr::filter(!is.na(sector_desc), !is.na(earmarking_name)) |>
+        dplyr::group_by(sector_desc, earmarking_name) |>
         dplyr::summarise(
-          total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+          total_funding = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
         dplyr::mutate(
-          x = factor(.data$sector_desc, levels = rev(sector_totals$sector_desc))
+          x = factor(sector_desc, levels = rev(sector_totals$sector_desc))
         )
     }
   )
@@ -213,8 +201,8 @@ show_donor_earmarking <- function(donor_name,
     # Order bars so highest values are at top when flipped
     show_data <- show_data |>
       dplyr::mutate(
-        earmarking_name = factor(.data$earmarking_name, 
-                                 levels = rev(unique(.data$earmarking_name)))
+        earmarking_name = factor(earmarking_name, 
+                                 levels = rev(unique(earmarking_name)))
       )
     
     p <- ggplot2::ggplot(
@@ -222,7 +210,8 @@ show_donor_earmarking <- function(donor_name,
       ggplot2::aes(x = earmarking_name, y = total_funding, fill = earmarking_name)
     ) +
       ggplot2::geom_col() +
-      unhcrthemes::theme_unhcr(grid = "X", axis = "Y", axis_title = "Y") +
+      unhcrthemes::theme_unhcr(grid = "X", axis = "Y", axis_title = "Y",
+                               font_size = 20 ) +
       ggplot2::scale_y_continuous(
         labels = scales::label_number(scale_cut = scales::cut_short_scale())
       ) +
@@ -242,7 +231,7 @@ show_donor_earmarking <- function(donor_name,
     # Ensure earmarking_name is a factor with consistent levels
     show_data <- show_data |>
       dplyr::mutate(
-        earmarking_name = factor(.data$earmarking_name,
+        earmarking_name = factor(earmarking_name,
                                  levels = names(earmarking_colors))
       )
     
@@ -258,7 +247,8 @@ show_donor_earmarking <- function(donor_name,
       ggplot2::aes(x = x, y = total_funding, fill = earmarking_name)
     ) +
       ggplot2::geom_col(position = "stack") +
-      unhcrthemes::theme_unhcr(grid = "X", axis = "Y", axis_title = "Y") +
+      unhcrthemes::theme_unhcr(grid = "X", axis = "Y", axis_title = "Y",
+                               font_size = 20 ) +
       ggplot2::scale_y_continuous(
         labels = scales::label_number(scale_cut = scales::cut_short_scale())
       ) +

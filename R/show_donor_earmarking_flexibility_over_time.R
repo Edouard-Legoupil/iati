@@ -52,7 +52,7 @@ show_donor_earmarking_flexibility_over_time <- function(donor_name,
   p <- ggplot2::ggplot(earmarking_over_time, ggplot2::aes(x = year, y = total_funding, fill = earmarking_name)) +
     ggplot2::geom_bar(stat = "identity", position = "fill") +
     ggplot2::scale_y_continuous(labels = scales::percent_format()) +
-    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = "X", font_size = 16) +
+    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = "X", font_size = 20) +
     ggplot2::labs(
       title = paste("Earmarking Flexibility Over Time for", donor_name, " in ",ctr_name ),
       subtitle = "Proportion of funding by earmarking category",

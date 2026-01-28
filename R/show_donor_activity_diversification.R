@@ -46,39 +46,39 @@ show_donor_activity_diversification <- function(
 
   # ---- Prepare joined dataset ----
   df <- data_transaction |>
-    dplyr::filter(.data$transaction_type_name == "Incoming Commitment") |>
+    dplyr::filter(transaction_type_name == "Incoming Commitment") |>
     dplyr::left_join(
-      data_activity |> dplyr::select(.data$iati_identifier, .data$ctr_name),
+      data_activity |> dplyr::select(iati_identifier, ctr_name),
       by = "iati_identifier"
     ) |>
-    dplyr::mutate(year = lubridate::year(lubridate::ymd(.data$transaction_date))) |>
-    dplyr::filter(!is.na(.data$year), !is.na(.data$ctr_name))
+    dplyr::mutate(year = lubridate::year(lubridate::ymd(transaction_date))) |>
+    dplyr::filter(!is.na(year), !is.na(ctr_name))
 
   # ---- Year filter ----
-  if (!is.null(start_year)) df <- df |> dplyr::filter(.data$year >= start_year)
-  if (!is.null(end_year))   df <- df |> dplyr::filter(.data$year <= end_year)
+  if (!is.null(start_year)) df <- df |> dplyr::filter(year >= start_year)
+  if (!is.null(end_year))   df <- df |> dplyr::filter(year <= end_year)
   if (nrow(df) == 0) stop("No data after filtering (check start_year/end_year).")
 
   # ---- Denominator: total # countries per year ----
   total_countries_by_year <- df |>
-    dplyr::group_by(.data$year) |>
-    dplyr::summarise(total_countries = dplyr::n_distinct(.data$ctr_name), .groups = "drop")
+    dplyr::group_by(year) |>
+    dplyr::summarise(total_countries = dplyr::n_distinct(ctr_name), .groups = "drop")
 
   # ---- Donor-year: countries covered & coverage % ----
   donor_countries_by_year <- df |>
-    dplyr::group_by(.data$transaction_provider_org, .data$year) |>
+    dplyr::group_by(transaction_provider_org, year) |>
     dplyr::summarise(
-      num_countries      = dplyr::n_distinct(.data$ctr_name),
-      total_funding_year = sum(.data$transaction_value_USD, na.rm = TRUE),
+      num_countries      = dplyr::n_distinct(ctr_name),
+      total_funding_year = sum(transaction_value_USD, na.rm = TRUE),
       .groups = "drop"
     ) |>
     dplyr::left_join(total_countries_by_year, by = "year") |>
-    dplyr::mutate(coverage_pct = .data$num_countries / .data$total_countries)
+    dplyr::mutate(coverage_pct = num_countries / total_countries)
 
   # ---- Focal donor series ----
   donor_exists <- donor_name %in% donor_countries_by_year$transaction_provider_org
   donor_series <- donor_countries_by_year |>
-    dplyr::filter(.data$transaction_provider_org == .env$donor_name)
+    dplyr::filter(transaction_provider_org == .env$donor_name)
 
   if (!donor_exists) {
     warning("Donor '", donor_name, "' not found in filtered data. Plot will show benchmarks only.")
@@ -88,38 +88,38 @@ show_donor_activity_diversification <- function(
   donor_labels_df <- NULL
   if (donor_exists && nrow(donor_series) > 0) {
     donor_labels_df <- donor_series |>
-      dplyr::mutate(label_txt = as.character(.data$num_countries))
+      dplyr::mutate(label_txt = as.character(num_countries))
   }
 
   # ---- Benchmarks: Top 5%, Top 10%, Top 50% (per year) ----
   ranks <- donor_countries_by_year |>
-    dplyr::group_by(.data$year) |>
-    dplyr::arrange(dplyr::desc(.data$total_funding_year), .by_group = TRUE) |>
+    dplyr::group_by(year) |>
+    dplyr::arrange(dplyr::desc(total_funding_year), .by_group = TRUE) |>
     dplyr::mutate(
       n_donors = dplyr::n(),
       rank     = dplyr::row_number(),
       # ensure at least 1 donor per threshold:
-      k5  = pmax(1L, ceiling(0.05 * .data$n_donors)),
-      k10 = pmax(1L, ceiling(0.10 * .data$n_donors)),
-      k50 = pmax(1L, ceiling(0.50 * .data$n_donors)),
-      in_top5  = .data$rank <= .data$k5,
-      in_top10 = .data$rank <= .data$k10,
-      in_top50 = .data$rank <= .data$k50
+      k5  = pmax(1L, ceiling(0.05 * n_donors)),
+      k10 = pmax(1L, ceiling(0.10 * n_donors)),
+      k50 = pmax(1L, ceiling(0.50 * n_donors)),
+      in_top5  = rank <= k5,
+      in_top10 = rank <= k10,
+      in_top50 = rank <= k50
     ) |>
     dplyr::ungroup()
 
   bench <- ranks |>
-    dplyr::group_by(.data$year) |>
+    dplyr::group_by(year) |>
     dplyr::summarise(
-      Top5  = mean(.data$coverage_pct[.data$in_top5],  na.rm = TRUE),
-      Top10 = mean(.data$coverage_pct[.data$in_top10], na.rm = TRUE),
-      Top50 = mean(.data$coverage_pct[.data$in_top50], na.rm = TRUE),
+      Top5  = mean(coverage_pct[in_top5],  na.rm = TRUE),
+      Top10 = mean(coverage_pct[in_top10], na.rm = TRUE),
+      Top50 = mean(coverage_pct[in_top50], na.rm = TRUE),
       .groups = "drop"
     ) |>
     tidyr::pivot_longer(cols = c("Top5", "Top10", "Top50"),
                         names_to = "benchmark", values_to = "coverage_pct") |>
     dplyr::mutate(
-      benchmark = factor(.data$benchmark, levels = c("Top50", "Top10", "Top5"))
+      benchmark = factor(benchmark, levels = c("Top50", "Top10", "Top5"))
     )
 
   # ---- Aesthetics ----
@@ -143,18 +143,15 @@ show_donor_activity_diversification <- function(
     "over time"
   }
 
-  title_txt <- paste0("Activity Diversification for ", donor_name, " | ", year_range)
-  subtitle_txt <- paste(
-    "Donor’s % of UNHCR operations covered / Average coverage for Top 5%, Top 10%, and Top 50% donors (ranked by annual funding)"
-  )
+ 
 
   # ---- Plot ----
   p <- ggplot2::ggplot() +
     # Benchmarks (three straight lines, no points)
     ggplot2::geom_smooth(
       data = bench,
-      ggplot2::aes(x = .data$year, y = .data$coverage_pct,
-                   color = .data$benchmark, linetype = .data$benchmark),
+      ggplot2::aes(x = year, y = coverage_pct,
+                   color = benchmark, linetype = benchmark),
       method = "loess", se = FALSE, span = loess_span,
       linewidth = 1.1
     ) +
@@ -162,7 +159,7 @@ show_donor_activity_diversification <- function(
     { if (donor_exists)
         ggplot2::geom_smooth(
           data = donor_series,
-          ggplot2::aes(x = .data$year, y = .data$coverage_pct),
+          ggplot2::aes(x = year, y = coverage_pct),
           method = "loess", se = FALSE, span = loess_span,
           color = col_donor, linewidth = 1.8
         )
@@ -171,7 +168,7 @@ show_donor_activity_diversification <- function(
     { if (donor_exists)
         ggplot2::geom_point(
           data = donor_series,
-          ggplot2::aes(x = .data$year, y = .data$coverage_pct),
+          ggplot2::aes(x = year, y = coverage_pct),
           color = col_donor, size = 4.3, stroke = 0
         )
       else ggplot2::geom_blank() } +
@@ -180,8 +177,9 @@ show_donor_activity_diversification <- function(
         if (requireNamespace("ggrepel", quietly = TRUE)) {
           ggrepel::geom_label_repel(
             data = donor_labels_df,
-            ggplot2::aes(x = .data$year, y = .data$coverage_pct, label = .data$label_txt),
-            color = col_donor, size = 4.0,
+            ggplot2::aes(x = year, y = coverage_pct, label = label_txt),
+            color = col_donor,
+            size = 7,
             direction = "y", max.overlaps = Inf,
             box.padding = 0.15, point.padding = 0.2,
             segment.color = col_donor, segment.size = 0.1,
@@ -190,7 +188,7 @@ show_donor_activity_diversification <- function(
         } else {
           ggplot2::geom_text(
             data = donor_labels_df,
-            ggplot2::aes(x = .data$year, y = .data$coverage_pct, label = .data$label_txt),
+            ggplot2::aes(x = year, y = coverage_pct, label = label_txt),
             color = col_donor, size = 3.8, vjust = -0.5
           )
         }
@@ -214,19 +212,18 @@ show_donor_activity_diversification <- function(
     ) +
     ggplot2::scale_x_continuous(breaks = scales::pretty_breaks()) +
     ggplot2::labs(
-      title = title_txt,
-      subtitle = subtitle_txt,
+      title = paste0("Activity Diversification for ", donor_name),
+    #  subtitle = paste(    "Donor’s % of UNHCR operations covered / Average coverage for Top 5%, Top 10%, and Top 50% donors (ranked by annual funding)" ),
       x = "Year",
       y = "% of UNHCR operations (countries) covered",
       color = NULL, linetype = NULL,
-      caption = "Source: UNHCR IATI — Coverage = (# countries funded by donor) / (total distinct countries funded by any donor in year)."
+      caption = "Source: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)— Coverage = (# countries funded by donor) / (total distinct countries funded by any donor in year)."
     ) +
-    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, font_size = 18) +
-    ggplot2::theme(
-      legend.position = "bottom",
-      legend.box = "horizontal",
-      legend.margin = ggplot2::margin(t = -3)
-    ) +
+    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, 
+                             font_size = 20,
+                             legend = TRUE,
+                             legend_title = FALSE) +
+
     ggplot2::coord_cartesian(clip = "off")
 
   # ---- Verbose diagnostics ----

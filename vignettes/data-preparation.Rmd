@@ -8,9 +8,15 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
+
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>",
+  message=FALSE, 
+  warning=FALSE,
+  fig.width = 8,
+  fig.asp = 0.718,
+  out.width = "90%"
 )
 ```
 

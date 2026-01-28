@@ -38,7 +38,6 @@ This function serves as the "Semantic Generator," combining structure and
  statistics to prompt an LLM for a structured description.
 }
 \examples{
-
 library(ggplot2)
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
@@ -54,4 +53,5 @@ story <- generate_description(structure= extract_structure(p),
                       model = "gpt-4.1-mini",
                       max_tokens_short_desc = 30,
                       max_tokens_long_desc= 500 ) 
+print(story$long_desc)
 }

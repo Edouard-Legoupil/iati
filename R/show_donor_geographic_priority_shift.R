@@ -8,6 +8,10 @@
 #' @param start_year Optional start year.
 #' @param end_year Optional end year.
 #' @param verbose Print diagnostic messages.
+#' 
+#' @import ggplot2
+#' @import dplyr
+#' @importFrom ggalluvial geom_alluvium
 #'
 #' @return A fully labeled ggalluvial plot.
 #' @export
@@ -147,19 +151,17 @@ show_donor_geographic_priority_shift <- function(
     ) +
     ggplot2::scale_fill_manual(values = fill_values) +
     ggplot2::scale_y_continuous(labels = scales::percent) +
-    ggplot2::scale_x_discrete(expand = ggplot2::expansion(add = c(0.05, 0.65))) +
+    ggplot2::scale_x_discrete(expand = ggplot2::expansion(add = c(0.05, 0.05))) +
     ggplot2::labs(
-      title = paste0("Disbursements Shift for ", donor_name, " | ",
-                     min(df_show$year), "–", max(df_show$year)),
+      title = paste0("Disbursements Shift for ", donor_name),
       #subtitle = " ",
       x = "",
       y = ""
     ) +
-    unhcrthemes::theme_unhcr( font_size = 22) +
-    ggplot2::theme(
-      legend.position = "none",
-      plot.margin = ggplot2::margin(5.5, 55, 5.5, 5.5)
-    ) +
+    unhcrthemes::theme_unhcr( legend = TRUE,
+                              legend_title = FALSE,
+                             font_size = 20) +
+
     ggplot2::coord_cartesian(clip = "off")
 
   # ---- Extract TRUE ymax/ymin from plotted polygons ----
@@ -188,31 +190,31 @@ show_donor_geographic_priority_shift <- function(
       year_fct = last_year_fct
     )
 
-  # ---- Add Direct Labels ----
-  if (has_ggrepel) {
-    p <- p +
-      ggrepel::geom_label_repel(
-        data = labels_df,
-        ggplot2::aes(x = year_fct, y = y_mid, label = label),
-        inherit.aes = FALSE,
-        nudge_x = 0.4,
-        hjust = 0,
-        direction = "y",
-        segment.color = "grey60",
-        size = 4.5,
-        max.overlaps = Inf
-      )
-  } else {
-    p <- p +
-      ggplot2::geom_text(
-        data = labels_df,
-        ggplot2::aes(x = year_fct, y = y_mid, label = label),
-        inherit.aes = FALSE,
-        hjust = 0,
-        nudge_x = 0.25,
-        size = 6.5
-      )
-  }
+  # # ---- Add Direct Labels ----
+  # if (has_ggrepel) {
+  #   p <- p +
+  #     ggrepel::geom_label_repel(
+  #       data = labels_df,
+  #       ggplot2::aes(x = year_fct, y = y_mid, label = label),
+  #       inherit.aes = FALSE,
+  #       nudge_x = 0.4,
+  #       hjust = 0,
+  #       direction = "y",
+  #       segment.color = "grey60",
+  #       size = 7,
+  #       max.overlaps = Inf
+  #     )
+  # } else {
+  #   p <- p +
+  #     ggplot2::geom_text(
+  #       data = labels_df,
+  #       ggplot2::aes(x = year_fct, y = y_mid, label = label),
+  #       inherit.aes = FALSE,
+  #       hjust = 0,
+  #       nudge_x = 0.25,
+  #       size = 6.5
+  #     )
+  # }
 
   return(p)
 }

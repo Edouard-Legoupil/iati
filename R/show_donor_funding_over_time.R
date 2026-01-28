@@ -48,26 +48,26 @@ show_donor_funding_over_time <- function(donor_name,
   df <- iati::dataTransaction |>
     dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
     dplyr::filter(
-      .data$transaction_provider_org == donor_name,
-      .data$transaction_type_name == "Incoming Commitment"
+      transaction_provider_org == donor_name,
+      transaction_type_name == "Incoming Commitment"
     )
 
   # Filtering (vector-friendly)
   if (!is.null(year)) {
-    df <- df |> dplyr::filter(.data$year %in% year)
+    df <- df |> dplyr::filter(year %in% year)
   }
   if (!is.null(programme_lab)) {
-    df <- df |> dplyr::filter(.data$programme_lab %in% programme_lab)
+    df <- df |> dplyr::filter(programme_lab %in% programme_lab)
   } else if (!is.null(iati_identifier_ops)) {
-    df <- df |> dplyr::filter(.data$iati_identifier_ops %in% iati_identifier_ops)
+    df <- df |> dplyr::filter(iati_identifier_ops %in% iati_identifier_ops)
   } else if (!is.null(ctr_name)) {
-    df <- df |> dplyr::filter(.data$ctr_name %in% ctr_name)
+    df <- df |> dplyr::filter(ctr_name %in% ctr_name)
   }
 
   # Ensure year is an ordered factor (nice bar ordering) - robust to char/numeric
   df <- df |>
     dplyr::mutate(
-      year = suppressWarnings(as.numeric(as.character(.data$year))),
+      year = suppressWarnings(as.numeric(as.character(year))),
       year = factor(year, levels = sort(unique(year), na.last = TRUE))
     )
 
@@ -81,30 +81,20 @@ show_donor_funding_over_time <- function(donor_name,
     stop("Invalid 'by' argument. Choose from 'global', 'region', 'country', 'earmarking_name'.")
   )
 
-  # If by == region: map missing/empty region to "global/HQ"
-  if (identical(by, "region")) {
-    df <- df |>
-      dplyr::mutate(
-        unhcr_region = dplyr::case_when(
-          is.na(.data$unhcr_region) ~ "global/HQ",
-          trimws(.data$unhcr_region) == "" ~ "global/HQ",
-          TRUE ~ .data$unhcr_region
-        )
-      )
-  }
+
 
   # If by == country: keep only top N countries overall (across years)
   if (identical(by, "country")) {
     top_countries <- df |>
-      dplyr::group_by(.data$ctr_name) |>
+      dplyr::group_by(ctr_name) |>
       dplyr::summarise(
-        total = sum(.data$transaction_value_USD, na.rm = TRUE),
+        total = sum(transaction_value_USD, na.rm = TRUE),
         .groups = "drop"
       ) |>
-      dplyr::slice_max(order_by = .data$total, n = top_n_countries, with_ties = FALSE) |>
-      dplyr::pull(.data$ctr_name)
+      dplyr::slice_max(order_by = total, n = top_n_countries, with_ties = FALSE) |>
+      dplyr::pull(ctr_name)
 
-    df <- df |> dplyr::filter(.data$ctr_name %in% top_countries)
+    df <- df |> dplyr::filter(ctr_name %in% top_countries)
   }
 
   # Drop NA levels for facet var (after any mapping above)
@@ -115,16 +105,16 @@ show_donor_funding_over_time <- function(donor_name,
   # Summarise
   if (is.null(facet_var)) {
     show_data <- df |>
-      dplyr::group_by(.data$year) |>
+      dplyr::group_by(year) |>
       dplyr::summarise(
-        total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+        total_funding = sum(transaction_value_USD, na.rm = TRUE),
         .groups = "drop"
       )
   } else {
     show_data <- df |>
-      dplyr::group_by(.data$year, .data[[facet_var]]) |>
+      dplyr::group_by(year, .data[[facet_var]]) |>
       dplyr::summarise(
-        total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+        total_funding = sum(transaction_value_USD, na.rm = TRUE),
         .groups = "drop"
       )
   }
@@ -139,9 +129,9 @@ show_donor_funding_over_time <- function(donor_name,
   }
 
   # Plot (bar chart only)
-  p <- ggplot2::ggplot(show_data, ggplot2::aes(x = .data$year, y = .data$total_funding)) +
+  p <- ggplot2::ggplot(show_data, ggplot2::aes(x = year, y = total_funding)) +
     ggplot2::geom_col(fill = "#0072BC") +
-    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = "X") +
+    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = "X", font_size = 20, legend = FALSE) +
     ggplot2::scale_y_continuous(labels = scales::label_number(scale_cut = scales::cut_short_scale())) +
     ggplot2::labs(
       title = paste("Funding Over Time from", donor_name),

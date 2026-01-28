@@ -126,68 +126,60 @@ compare_donor_profiles <- function(donor_names,
   # ---- 1) Load base data (ALL donors), then apply filters ----
   df_base <- iati::dataTransaction |>
     dplyr::left_join(iati::dataActivity, by = "iati_identifier") |>
-    dplyr::filter(.data$transaction_type_name == "Incoming Commitment")
+    dplyr::filter(transaction_type_name == "Incoming Commitment")
 
   if (!is.null(year_filter)) {
-    df_base <- df_base |> dplyr::filter(.data$year %in% .env$year_filter)
+    df_base <- df_base |> dplyr::filter(year %in% .env$year_filter)
   }
   if (!is.null(region_filter)) {
-    df_base <- df_base |> dplyr::filter(.data$unhcr_region %in% .env$region_filter)
+    df_base <- df_base |> dplyr::filter(unhcr_region %in% .env$region_filter)
   }
   if (!is.null(programme_filter)) {
-    df_base <- df_base |> dplyr::filter(.data$programme_lab %in% .env$programme_filter)
+    df_base <- df_base |> dplyr::filter(programme_lab %in% .env$programme_filter)
   }
   if (!is.null(ops_filter)) {
-    df_base <- df_base |> dplyr::filter(.data$iati_identifier_ops %in% .env$ops_filter)
+    df_base <- df_base |> dplyr::filter(iati_identifier_ops %in% .env$ops_filter)
   }
   if (!is.null(country_filter)) {
-    df_base <- df_base |> dplyr::filter(.data$ctr_name %in% .env$country_filter)
+    df_base <- df_base |> dplyr::filter(ctr_name %in% .env$country_filter)
   }
 
-  # Clean unhcr_region: replace NA/empty with "Global/HQ"
-  df_base <- df_base |>
-    dplyr::mutate(
-      unhcr_region = dplyr::case_when(
-        is.na(.data$unhcr_region) ~ "Global/HQ",
-        trimws(.data$unhcr_region) == "" ~ "Global/HQ",
-        TRUE ~ .data$unhcr_region
-      )
-    )
+
 
   # ---- 2) Helper: build (donor, dimension, total_funding) ----
   build_profile <- function(df_in, by) {
     if (by == "earmarking") {
       df_in |>
-        dplyr::filter(!is.na(.data$earmarking_name)) |>
-        dplyr::group_by(.data$transaction_provider_org, .data$earmarking_name) |>
+        dplyr::filter(!is.na(earmarking_name)) |>
+        dplyr::group_by(transaction_provider_org, earmarking_name) |>
         dplyr::summarise(
-          total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+          total_funding = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
-        dplyr::rename(dimension = .data$earmarking_name)
+        dplyr::rename(dimension = earmarking_name)
     } else if (by == "region") {
       df_in |>
-        dplyr::group_by(.data$transaction_provider_org, .data$unhcr_region) |>
+        dplyr::group_by(transaction_provider_org, unhcr_region) |>
         dplyr::summarise(
-          total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+          total_funding = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
-        dplyr::rename(dimension = .data$unhcr_region)
+        dplyr::rename(dimension = unhcr_region)
     } else { # by == "country"
       df_in |>
-        dplyr::filter(!is.na(.data$ctr_name)) |>
-        dplyr::group_by(.data$transaction_provider_org, .data$ctr_name) |>
+        dplyr::filter(!is.na(ctr_name)) |>
+        dplyr::group_by(transaction_provider_org, ctr_name) |>
         dplyr::summarise(
-          total_funding = sum(.data$transaction_value_USD, na.rm = TRUE),
+          total_funding = sum(transaction_value_USD, na.rm = TRUE),
           .groups = "drop"
         ) |>
-        dplyr::rename(dimension = .data$ctr_name)
+        dplyr::rename(dimension = ctr_name)
     }
   }
 
   # ---- 3) Selected donors ----
   selected_df <- df_base |>
-    dplyr::filter(.data$transaction_provider_org %in% .env$donor_names)
+    dplyr::filter(transaction_provider_org %in% .env$donor_names)
 
   show_selected <- build_profile(selected_df, by)
 
@@ -202,7 +194,7 @@ compare_donor_profiles <- function(donor_names,
     focal <- donor_names[[1]]
 
     others_df <- df_base |>
-      dplyr::filter(.data$transaction_provider_org != .env$focal)
+      dplyr::filter(transaction_provider_org != .env$focal)
 
     show_others <- build_profile(others_df, by)
 
@@ -220,64 +212,76 @@ compare_donor_profiles <- function(donor_names,
         if (display_mode == "relative") {
           # Calculate percentage shares for each other donor
           others_totals <- show_others |>
-            dplyr::group_by(.data$transaction_provider_org) |>
-            dplyr::summarise(donor_total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
+            dplyr::group_by(transaction_provider_org) |>
+            dplyr::summarise(donor_total = sum(total_funding, na.rm = TRUE), .groups = "drop")
           
-          others_shares <- show_others |>
-            dplyr::left_join(others_totals, by = "transaction_provider_org") |>
-            dplyr::mutate(
-              share = dplyr::if_else(.data$donor_total > 0, 
-                                    .data$total_funding / .data$donor_total, 
-                                    NA_real_)
-            ) |>
-            dplyr::group_by(.data$dimension) |>
-            dplyr::summarise(avg_share = mean(.data$share, na.rm = TRUE), .groups = "drop")
+        # First, get complete set of dimensions across all other donors
+        all_dimensions <- unique(show_others$dimension)
+        
+        others_shares <- show_others |>
+          dplyr::left_join(others_totals, by = "transaction_provider_org") |>
+          # Calculate shares, treating missing as 0
+          dplyr::mutate(
+            share = dplyr::if_else(donor_total > 0, 
+                                  total_funding / donor_total, 
+                                  0)
+          ) |>
+          # Ensure we have all dimensions for each donor
+          tidyr::complete(
+            transaction_provider_org,
+            dimension = all_dimensions,
+            fill = list(share = 0, total_funding = 0, donor_total = 0)
+          ) |>
+          # Now average the shares (including 0s for missing dimensions)
+          dplyr::group_by(dimension) |>
+          dplyr::summarise(avg_share = mean(share, na.rm = FALSE), .groups = "drop")
           
           show_cmp <- others_shares |>
             dplyr::mutate(
               transaction_provider_org = comparator_label,
               total_funding = NA_real_,  # Not used for relative display
-              share = .data$avg_share
+              share = avg_share
             ) |>
-            dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
+            dplyr::select(transaction_provider_org, dimension, total_funding, share)
           
-        } else { # display_mode == "absolute"
-          # For absolute display: average share × average donor size
-          others_totals <- show_others |>
-            dplyr::group_by(.data$transaction_provider_org) |>
-            dplyr::summarise(donor_total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
-          
-          mean_total_others <- others_totals |>
-            dplyr::summarise(mean_total = mean(.data$donor_total, na.rm = TRUE), .groups = "drop") |>
-            dplyr::pull(.data$mean_total)
-          
-          others_shares <- show_others |>
-            dplyr::left_join(others_totals, by = "transaction_provider_org") |>
-            dplyr::mutate(
-              share = dplyr::if_else(.data$donor_total > 0, 
-                                    .data$total_funding / .data$donor_total, 
-                                    NA_real_)
-            ) |>
-            dplyr::group_by(.data$dimension) |>
-            dplyr::summarise(avg_share = mean(.data$share, na.rm = TRUE), .groups = "drop")
-          
-          show_cmp <- others_shares |>
-            dplyr::mutate(
-              transaction_provider_org = comparator_label,
-              total_funding = .data$avg_share * mean_total_others,
-              share = .data$avg_share
-            ) |>
-            dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
-        }
+      } else { # display_mode == "absolute"
+        # Calculate actual average dollar amounts per donor
+        # First, ensure we have all dimensions for each donor (treat missing as 0)
+        all_dimensions <- unique(show_others$dimension)
+        
+        # Create complete data frame with all donor-dimension combinations
+        complete_others <- show_others |>
+          tidyr::complete(
+            transaction_provider_org,
+            dimension = all_dimensions,
+            fill = list(total_funding = 0)
+          )
+        
+        # Calculate average dollar amount per donor for each dimension
+        avg_funding_by_dim <- complete_others |>
+          dplyr::group_by(dimension) |>
+          dplyr::summarise(
+            avg_funding = mean(total_funding, na.rm = TRUE),
+            .groups = "drop"
+          )
+        
+        show_cmp <- avg_funding_by_dim |>
+          dplyr::mutate(
+            transaction_provider_org = comparator_label,
+            total_funding = avg_funding,
+            share = NA_real_  # Not used in absolute mode
+          ) |>
+          dplyr::select(transaction_provider_org, dimension, total_funding, share)
+      }
 
       } else if (avg_method == "pooled") {
         comparator_label <- "Other donors (pooled)"
         
         # For both relative and absolute: use pooled totals
         pooled_totals <- show_others |>
-          dplyr::group_by(.data$dimension) |>
+          dplyr::group_by(dimension) |>
           dplyr::summarise(
-            total_funding = sum(.data$total_funding, na.rm = TRUE),
+            total_funding = sum(total_funding, na.rm = TRUE),
             .groups = "drop"
           )
         
@@ -287,16 +291,16 @@ compare_donor_profiles <- function(donor_names,
           show_cmp <- pooled_totals |>
             dplyr::mutate(
               transaction_provider_org = comparator_label,
-              share = .data$total_funding / grand_total
+              share = total_funding / grand_total
             ) |>
-            dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
+            dplyr::select(transaction_provider_org, dimension, total_funding, share)
         } else { # display_mode == "absolute"
           show_cmp <- pooled_totals |>
             dplyr::mutate(
               transaction_provider_org = comparator_label,
               share = NA_real_
             ) |>
-            dplyr::select(.data$transaction_provider_org, .data$dimension, .data$total_funding, .data$share)
+            dplyr::select(transaction_provider_org, dimension, total_funding, share)
         }
       }
 
@@ -304,7 +308,7 @@ compare_donor_profiles <- function(donor_names,
       selected_total <- sum(show_selected$total_funding, na.rm = TRUE)
       show_selected <- show_selected |>
         dplyr::mutate(
-          share = .data$total_funding / selected_total
+          share = total_funding / selected_total
         )
       
       show_data <- dplyr::bind_rows(show_selected, show_cmp)
@@ -314,15 +318,15 @@ compare_donor_profiles <- function(donor_names,
     # Multiple donors - calculate shares if needed
     if (display_mode == "relative") {
       donor_totals <- show_selected |>
-        dplyr::group_by(.data$transaction_provider_org) |>
-        dplyr::summarise(donor_total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop")
+        dplyr::group_by(transaction_provider_org) |>
+        dplyr::summarise(donor_total = sum(total_funding, na.rm = TRUE), .groups = "drop")
       
       show_data <- show_selected |>
         dplyr::left_join(donor_totals, by = "transaction_provider_org") |>
         dplyr::mutate(
-          share = .data$total_funding / .data$donor_total
+          share = total_funding / donor_total
         ) |>
-        dplyr::select(-.data$donor_total)
+        dplyr::select(-donor_total)
     } else {
       show_data <- show_selected |>
         dplyr::mutate(share = NA_real_)
@@ -333,38 +337,38 @@ compare_donor_profiles <- function(donor_names,
   if (by == "country" && !is.null(top_n) && is.numeric(top_n)) {
     # Keep top_n countries based on total funding across all shown donors
     top_countries <- show_data |>
-      dplyr::group_by(.data$dimension) |>
-      dplyr::summarise(total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop") |>
-      dplyr::arrange(dplyr::desc(.data$total)) |>
+      dplyr::group_by(dimension) |>
+      dplyr::summarise(total = sum(total_funding, na.rm = TRUE), .groups = "drop") |>
+      dplyr::arrange(dplyr::desc(total)) |>
       dplyr::slice(1:top_n) |>
-      dplyr::pull(.data$dimension)
+      dplyr::pull(dimension)
     
     show_data <- show_data |>
-      dplyr::filter(.data$dimension %in% top_countries)
+      dplyr::filter(dimension %in% top_countries)
   }
 
   # ---- 6) Prepare data for overlaid bar chart ----
   # Create factor levels for dimension ordered by total funding
   dimension_levels <- show_data |>
-    dplyr::group_by(.data$dimension) |>
-    dplyr::summarise(total = sum(.data$total_funding, na.rm = TRUE), .groups = "drop") |>
-    dplyr::arrange(dplyr::desc(.data$total)) |>
-    dplyr::pull(.data$dimension)
+    dplyr::group_by(dimension) |>
+    dplyr::summarise(total = sum(total_funding, na.rm = TRUE), .groups = "drop") |>
+    dplyr::arrange(dplyr::desc(total)) |>
+    dplyr::pull(dimension)
   
   # Add type column for plotting
   
   if (is.null(comparator_label)) comparator_label <- NA_character_
   show_data <- show_data |>
     dplyr::mutate(
-      dimension = factor(.data$dimension, levels = dimension_levels),
+      dimension = factor(dimension, levels = dimension_levels),
       type = dplyr::case_when(
-        .data$transaction_provider_org %in% donor_names & add_comparator ~ "Selected Donor",
-        .data$transaction_provider_org %in% donor_names & !add_comparator ~ "Selected Donors",
-        .data$transaction_provider_org == comparator_label ~ "Comparator",
+        transaction_provider_org %in% donor_names & add_comparator ~ "Selected Donor",
+        transaction_provider_org %in% donor_names & !add_comparator ~ "Selected Donors",
+        transaction_provider_org == comparator_label ~ "Comparator",
         TRUE ~ "Other"
       ),
       # Select value based on display mode
-      value = if (display_mode == "absolute") .data$total_funding else .data$share
+      value = if (display_mode == "absolute") total_funding else share
     )
 
   # ---- 7) Define colors and aesthetics ----
@@ -400,7 +404,7 @@ compare_donor_profiles <- function(donor_names,
   # Build title based on number of donors and display mode
   if (add_comparator) {
     if (display_mode == "relative") {
-      title <- paste(donor_names[1], "vs average of other donors:", stringr::str_to_title(by), "profile", year_str)
+      title <- paste(donor_names[1], "vs average | ", year_str)
     } else {
       title <- paste(donor_names[1], "vs", tolower(gsub("\\(.*\\)", "", comparator_label)), ":", stringr::str_to_title(by), "profile", year_str)
     }
@@ -483,12 +487,12 @@ compare_donor_profiles <- function(donor_names,
   
   # Add bars in correct order (comparator first, then selected donor)
   for (bar_type in plot_order) {
-    type_data <- plot_data |> dplyr::filter(.data$type == bar_type)
+    type_data <- plot_data |> dplyr::filter(type == bar_type)
     
     if (nrow(type_data) > 0) {
       p <- p + ggplot2::geom_col(
         data = type_data,
-        ggplot2::aes(x = .data$dimension, y = .data$value, fill = .data$dimension),
+        ggplot2::aes(x = dimension, y = value, fill = dimension),
         width = bar_widths[bar_type],
         alpha = bar_alphas[bar_type],
         position = "identity",  # Fully overlaid
@@ -521,37 +525,11 @@ compare_donor_profiles <- function(donor_names,
     )
   }
   
-  # Create a custom theme that combines UNHCR theme with our modifications
-  # Apply everything in a single theme() call to avoid conflicts
-  p <- p + ggplot2::theme(
-    # Base UNHCR theme settings
-    panel.grid.major.y = ggplot2::element_blank(),
-    panel.grid.minor.y = ggplot2::element_blank(),
-    panel.grid.major.x = ggplot2::element_line(color = "#D3D3D3", linewidth = 0.5),
-    panel.grid.minor.x = ggplot2::element_blank(),
-    panel.background = ggplot2::element_rect(fill = "white", color = NA),
-    plot.background = ggplot2::element_rect(fill = "white", color = NA),
-    axis.line.y = ggplot2::element_blank(),
-    axis.line.x = ggplot2::element_line(color = "black", linewidth = 0.5),
-    axis.ticks.y = ggplot2::element_blank(),
-    axis.ticks.x = ggplot2::element_line(color = "black", linewidth = 0.5),
-    axis.text = ggplot2::element_text(size = 14, color = "black"),
-    axis.title.x = ggplot2::element_text(size = 16, color = "black", margin = ggplot2::margin(t = 10)),
-    axis.title.y = ggplot2::element_blank(),
-    plot.title = ggplot2::element_text(size = 20, face = "bold", color = "black", 
-                                       margin = ggplot2::margin(b = 10)),
-    plot.subtitle = ggplot2::element_text(size = 16, color = "black", margin = ggplot2::margin(b = 15)),
-    
-    # Our custom modifications
-    legend.position = "none",
-    plot.caption = ggplot2::element_text(
-      size = 9, 
-      hjust = 0, 
-      color = "gray40", 
-      lineheight = 1.1,
-      margin = ggplot2::margin(t = 10)
-    )
-  )
+  p <- p + 
+    unhcrthemes::theme_unhcr(grid = "X", axis = "Y", axis_title = "Y", 
+                             font_size = 20, 
+                             legend = FALSE) 
+
   
   return(p)
 }

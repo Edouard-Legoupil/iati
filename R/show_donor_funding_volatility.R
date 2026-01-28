@@ -85,20 +85,20 @@ show_donor_funding_volatility <- function(donor_name,
   # ---- 1) Join + parse dates robustly ----
   df <- tx |>
     dplyr::left_join(act, by = "iati_identifier") |>
-    dplyr::filter(.data$transaction_type_name == "Incoming Commitment") |>
+    dplyr::filter(transaction_type_name == "Incoming Commitment") |>
     dplyr::mutate(
       tx_date = as.Date(
         lubridate::parse_date_time(
-          .data$transaction_date,
+          transaction_date,
           orders = c("ymd", "Ymd", "ymd HMS", "Ymd HMS", "ymd HM", "Ymd HM", "dmy", "mdy"),
           quiet = TRUE,
           tz = "UTC"
         )
       ),
-      year_tx  = lubridate::year(.data$tx_date),
+      year_tx  = lubridate::year(tx_date),
       tx_value = as.numeric(.data[[value_col]])
     ) |>
-    dplyr::filter(!is.na(.data$tx_date), !is.na(.data$year_tx), !is.na(.data$tx_value))
+    dplyr::filter(!is.na(tx_date), !is.na(year_tx), !is.na(tx_value))
 
   # ---- 2) Optional filters (vector-friendly + safe) ----
   year_filter      <- year
@@ -107,25 +107,25 @@ show_donor_funding_volatility <- function(donor_name,
   country_filter   <- ctr_name
 
   if (!is.null(year_filter)) {
-    df <- df |> dplyr::filter(.data$year_tx %in% .env$year_filter)
+    df <- df |> dplyr::filter(year_tx %in% .env$year_filter)
   }
   if (!is.null(programme_filter)) {
     if (!("programme_lab" %in% names(df))) stop("`programme_lab` column not found in joined data.")
-    df <- df |> dplyr::filter(.data$programme_lab %in% .env$programme_filter)
+    df <- df |> dplyr::filter(programme_lab %in% .env$programme_filter)
   } else if (!is.null(ops_filter)) {
     if (!("iati_identifier_ops" %in% names(df))) stop("`iati_identifier_ops` column not found in joined data.")
-    df <- df |> dplyr::filter(.data$iati_identifier_ops %in% .env$ops_filter)
+    df <- df |> dplyr::filter(iati_identifier_ops %in% .env$ops_filter)
   } else if (!is.null(country_filter)) {
     if (!("ctr_name" %in% names(df))) stop("`ctr_name` column not found in joined data.")
-    df <- df |> dplyr::filter(.data$ctr_name %in% .env$country_filter)
+    df <- df |> dplyr::filter(ctr_name %in% .env$country_filter)
   }
 
   if (nrow(df) == 0) stop("No data available after filtering.")
 
   # ---- 3) Split donor vs others ----
-  donor_df <- df |> dplyr::filter(.data$transaction_provider_org == donor_name)
+  donor_df <- df |> dplyr::filter(transaction_provider_org == donor_name)
   if (nrow(donor_df) == 0) stop("Donor '", donor_name, "' not found under current filters.")
-  others_df <- df |> dplyr::filter(.data$transaction_provider_org != donor_name)
+  others_df <- df |> dplyr::filter(transaction_provider_org != donor_name)
 
   # ---- 4) Apply top_n_donors filter to comparator if specified ----
   if (!is.null(top_n_donors)) {
@@ -135,12 +135,12 @@ show_donor_funding_volatility <- function(donor_name,
     
     # Calculate total funding per donor across all filtered years
     other_donor_totals <- others_df |>
-      dplyr::group_by(.data$transaction_provider_org) |>
+      dplyr::group_by(transaction_provider_org) |>
       dplyr::summarise(
-        total_funding = sum(.data$tx_value, na.rm = TRUE),
+        total_funding = sum(tx_value, na.rm = TRUE),
         .groups = "drop"
       ) |>
-      dplyr::arrange(dplyr::desc(.data$total_funding)) |>
+      dplyr::arrange(dplyr::desc(total_funding)) |>
       dplyr::slice(1:top_n_donors)
     
     # Keep only top N donors for comparator
@@ -148,7 +148,7 @@ show_donor_funding_volatility <- function(donor_name,
     
     # Filter others_df to include only top donors
     others_df <- others_df |>
-      dplyr::filter(.data$transaction_provider_org %in% top_comparator_donors)
+      dplyr::filter(transaction_provider_org %in% top_comparator_donors)
     
     if (verbose) {
       message("Restricting comparator to top ", top_n_donors, 
@@ -159,14 +159,14 @@ show_donor_funding_volatility <- function(donor_name,
 
   # ---- 5) Define time bucket ----
   bucket_unit <- if (time_unit == "month") "month" else "quarter"
-  donor_df  <- donor_df  |> dplyr::mutate(period = lubridate::floor_date(.data$tx_date, unit = bucket_unit))
-  others_df <- others_df |> dplyr::mutate(period = lubridate::floor_date(.data$tx_date, unit = bucket_unit))
+  donor_df  <- donor_df  |> dplyr::mutate(period = lubridate::floor_date(tx_date, unit = bucket_unit))
+  others_df <- others_df |> dplyr::mutate(period = lubridate::floor_date(tx_date, unit = bucket_unit))
 
   # ---- 6) Donor period summaries ----
   donor_period <- donor_df |>
-    dplyr::group_by(.data$period) |>
+    dplyr::group_by(period) |>
     dplyr::summarise(
-      donor_total = sum(.data$tx_value, na.rm = TRUE),
+      donor_total = sum(tx_value, na.rm = TRUE),
       donor_n     = dplyr::n(),
       donor_mean  = donor_total / donor_n,
       .groups = "drop"
@@ -179,15 +179,15 @@ show_donor_funding_volatility <- function(donor_name,
   
   if (nrow(others_df) > 0) {
     others_totals <- others_df |>
-      dplyr::group_by(.data$transaction_provider_org) |>
-      dplyr::summarise(donor_total_all = sum(.data$tx_value, na.rm = TRUE), .groups = "drop") |>
-      dplyr::filter(.data$donor_total_all > 0) |>
-      dplyr::mutate(weight = .data$donor_total_all / sum(.data$donor_total_all, na.rm = TRUE))
+      dplyr::group_by(transaction_provider_org) |>
+      dplyr::summarise(donor_total_all = sum(tx_value, na.rm = TRUE), .groups = "drop") |>
+      dplyr::filter(donor_total_all > 0) |>
+      dplyr::mutate(weight = donor_total_all / sum(donor_total_all, na.rm = TRUE))
 
     others_period_donor <- others_df |>
-      dplyr::group_by(.data$transaction_provider_org, .data$period) |>
+      dplyr::group_by(transaction_provider_org, period) |>
       dplyr::summarise(
-        total = sum(.data$tx_value, na.rm = TRUE),
+        total = sum(tx_value, na.rm = TRUE),
         n     = dplyr::n(),
         mean  = total / n,
         .groups = "drop"
@@ -198,9 +198,9 @@ show_donor_funding_volatility <- function(donor_name,
       )
 
     others_period <- others_period_donor |>
-      dplyr::group_by(.data$period) |>
+      dplyr::group_by(period) |>
       dplyr::summarise(
-        others_weighted_mean = sum(.data$mean * .data$weight, na.rm = TRUE),
+        others_weighted_mean = sum(mean * weight, na.rm = TRUE),
         .groups = "drop"
       )
     
@@ -212,7 +212,7 @@ show_donor_funding_volatility <- function(donor_name,
 
   # ---- 8) Forecast donor trend (lm on log1p of donor_mean) ----
   donor_period_model <- donor_period |>
-    dplyr::arrange(.data$period) |>
+    dplyr::arrange(period) |>
     dplyr::mutate(t = dplyr::row_number())
 
   forecast_df <- NULL
@@ -270,17 +270,17 @@ show_donor_funding_volatility <- function(donor_name,
     
     # Calculate weighted average transactions per year for other donors
     others_kpi <- others_df |>
-      dplyr::group_by(.data$transaction_provider_org) |>
+      dplyr::group_by(transaction_provider_org) |>
       dplyr::summarise(
-        total = sum(.data$tx_value, na.rm = TRUE),
+        total = sum(tx_value, na.rm = TRUE),
         n = dplyr::n(),
         avg_txn = total / n,
-        years = dplyr::n_distinct(.data$year_tx),
+        years = dplyr::n_distinct(year_tx),
         txn_per_year = n / pmax(years, 1),
         .groups = "drop"
       ) |>
-      dplyr::filter(.data$total > 0) |>
-      dplyr::mutate(w = .data$total / sum(.data$total, na.rm = TRUE))
+      dplyr::filter(total > 0) |>
+      dplyr::mutate(w = total / sum(total, na.rm = TRUE))
 
     others_weighted_avg_txn <- sum(others_kpi$avg_txn * others_kpi$w, na.rm = TRUE)
     others_weighted_txn_per_year <- sum(others_kpi$txn_per_year * others_kpi$w, na.rm = TRUE)
@@ -318,7 +318,7 @@ show_donor_funding_volatility <- function(donor_name,
     # Selected donor: individual transaction points
     ggplot2::geom_point(
       data = donor_df,
-      ggplot2::aes(x = .data$tx_date, y = .data$tx_value),
+      ggplot2::aes(x = tx_date, y = tx_value),
       color = col_donor,
       alpha = 0.25,
       size = 1.5
@@ -326,14 +326,14 @@ show_donor_funding_volatility <- function(donor_name,
     # Selected donor: period mean line
     ggplot2::geom_line(
       data = donor_period,
-      ggplot2::aes(x = .data$period, y = .data$donor_mean),
+      ggplot2::aes(x = period, y = donor_mean),
       color = col_donor,
       linewidth = 1
     ) +
     # Selected donor: smoothed trend line
     ggplot2::geom_smooth(
       data = donor_period,
-      ggplot2::aes(x = .data$period, y = .data$donor_mean),
+      ggplot2::aes(x = period, y = donor_mean),
       method  = if (smooth_method == "loess") "loess" else "gam",
       formula = if (smooth_method == "loess") y ~ x else y ~ s(x, bs = "cs"),
       se = FALSE,
@@ -346,7 +346,7 @@ show_donor_funding_volatility <- function(donor_name,
     { if (!is.null(others_period) && nrow(others_period) > 0)
       ggplot2::geom_line(
         data = others_period,
-        ggplot2::aes(x = .data$period, y = .data$others_weighted_mean),
+        ggplot2::aes(x = period, y = others_weighted_mean),
         color = col_others,
         linewidth = 1,
         linetype = "dotdash"
@@ -355,7 +355,7 @@ show_donor_funding_volatility <- function(donor_name,
     { if (!is.null(forecast_df) && show_forecast_ci)
       ggplot2::geom_ribbon(
         data = forecast_df,
-        ggplot2::aes(x = .data$period, ymin = .data$lwr, ymax = .data$upr),
+        ggplot2::aes(x = period, ymin = lwr, ymax = upr),
         fill = col_forecast,
         alpha = 0.15
       )
@@ -363,7 +363,7 @@ show_donor_funding_volatility <- function(donor_name,
     { if (!is.null(forecast_df))
       ggplot2::geom_line(
         data = forecast_df,
-        ggplot2::aes(x = .data$period, y = .data$pred),
+        ggplot2::aes(x = period, y = pred),
         color = col_forecast,
         linewidth = 1,
         linetype = "dashed"
@@ -382,7 +382,8 @@ show_donor_funding_volatility <- function(donor_name,
         "\nSource: Data published by UNHCR as part of the International Aid Transparency Initiative (IATI)"
       )     
     ) +
-    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = "X", font_size = 18)
+    unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = "X", 
+                             font_size = 20)
 
   if (verbose) {
     message(

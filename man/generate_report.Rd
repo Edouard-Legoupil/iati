@@ -22,7 +22,7 @@ countries, generating a report file for each.
 }
 \examples{
 
-# linkdonor <- generate_report(type = "donor", top_n = 20)
+# linkdonor <- generate_report(type = "donor", top_n = 50)
 # dput(linkdonor)
 linkdonor <-   c("[Profile Report for donor: United States of America (Government of)](../reports/iatiAnalysis-donor-united-states-of-america-government-of.html)", 
 "[Profile Report for donor: Mastercard Foundation](../reports/iatiAnalysis-donor-mastercard-foundation.html)", 
@@ -43,7 +43,37 @@ linkdonor <-   c("[Profile Report for donor: United States of America (Governmen
 "[Profile Report for donor: Republic of Korea](../reports/iatiAnalysis-donor-republic-of-korea.html)", 
 "[Profile Report for donor: Italy (Government of)](../reports/iatiAnalysis-donor-italy-government-of.html)", 
 "[Profile Report for donor: Japan for UNHCR](../reports/iatiAnalysis-donor-japan-for-unhcr.html)", 
-"[Profile Report for donor: Ireland - Department of Foreign Affairs](../reports/iatiAnalysis-donor-ireland-department-of-foreign-affairs.html)"
+"[Profile Report for donor: Ireland - Department of Foreign Affairs](../reports/iatiAnalysis-donor-ireland-department-of-foreign-affairs.html)", 
+"[Profile Report for donor: France - Ministry for Europe and Foreign Affairs](../reports/iatiAnalysis-donor-france-ministry-for-europe-and-foreign-affairs.html)", 
+"[Profile Report for donor: Australia - Department of  Foreign Affairs and Trade](../reports/iatiAnalysis-donor-australia-department-of-foreign-affairs-and-trade.html)", 
+"[Profile Report for donor: United Nations Regular Budget](../reports/iatiAnalysis-donor-united-nations-regular-budget.html)", 
+"[Profile Report for donor: United Nations Central Emergency Response Fund (CERF)](../reports/iatiAnalysis-donor-united-nations-central-emergency-response-fund-cerf.html)", 
+"[Profile Report for donor: UNO-Flüchtlingshilfe](../reports/iatiAnalysis-donor-uno-fluchtlingshilfe.html)", 
+"[Profile Report for donor: Finland - Ministry for Foreign Affairs](../reports/iatiAnalysis-donor-finland-ministry-for-foreign-affairs.html)", 
+"[Profile Report for donor: USA for UNHCR](../reports/iatiAnalysis-donor-usa-for-unhcr.html)", 
+"[Profile Report for donor: Germany - Ministry for Economic Cooperation and Development](../reports/iatiAnalysis-donor-germany-ministry-for-economic-cooperation-and-development.html)", 
+"[Profile Report for donor: Belgian Development Cooperation](../reports/iatiAnalysis-donor-belgian-development-cooperation.html)", 
+"[Profile Report for donor: Austria (Government of)](../reports/iatiAnalysis-donor-austria-government-of.html)", 
+"[Profile Report for donor: Luxembourg (Government of)](../reports/iatiAnalysis-donor-luxembourg-government-of.html)", 
+"[Profile Report for donor: Sweden for UNHCR](../reports/iatiAnalysis-donor-sweden-for-unhcr.html)", 
+"[Profile Report for donor: Spain (Government of)](../reports/iatiAnalysis-donor-spain-government-of.html)", 
+"[Profile Report for donor: Canada (Government of)](../reports/iatiAnalysis-donor-canada-government-of.html)", 
+"[Profile Report for donor: AICS - Agenzia Italiana per la Cooperazione allo Sviluppo / Italian Agency for Cooperation and Development](../reports/iatiAnalysis-donor-aics-agenzia-italiana-per-la-cooperazione-allo-sviluppo-italian-agency-for-cooperation-and-development.html)", 
+"[Profile Report for donor: Switzerland (Government of)](../reports/iatiAnalysis-donor-switzerland-government-of.html)", 
+"[Profile Report for donor: African Development Bank](../reports/iatiAnalysis-donor-african-development-bank.html)", 
+"[Profile Report for donor: United Arab Emirates (Government of)](../reports/iatiAnalysis-donor-united-arab-emirates-government-of.html)", 
+"[Profile Report for donor: Qatar (Government of)](../reports/iatiAnalysis-donor-qatar-government-of.html)", 
+"[Profile Report for donor: Australia for UNHCR](../reports/iatiAnalysis-donor-australia-for-unhcr.html)", 
+"[Profile Report for donor: UK for UNHCR](../reports/iatiAnalysis-donor-uk-for-unhcr.html)", 
+"[Profile Report for donor: China (Government of)](../reports/iatiAnalysis-donor-china-government-of.html)", 
+"[Profile Report for donor: New Zealand - Ministry of Foreign Affairs and Trade - New Zealand Aid Programme](../reports/iatiAnalysis-donor-new-zealand-ministry-of-foreign-affairs-and-trade-new-zealand-aid-programme.html)", 
+"[Profile Report for donor: Saudi Arabia (Government of)](../reports/iatiAnalysis-donor-saudi-arabia-government-of.html)", 
+"[Profile Report for donor: Iceland (Government of)](../reports/iatiAnalysis-donor-iceland-government-of.html)", 
+"[Profile Report for donor: Kuwait (Government of)](../reports/iatiAnalysis-donor-kuwait-government-of.html)", 
+"[Profile Report for donor: Spain - Ministry of Foreign Affairs and Cooperation](../reports/iatiAnalysis-donor-spain-ministry-of-foreign-affairs-and-cooperation.html)", 
+"[Profile Report for donor: UN Joint Programmes (Government of)](../reports/iatiAnalysis-donor-un-joint-programmes-government-of.html)", 
+"[Profile Report for donor: Japan International Cooperation Agency (JICA)](../reports/iatiAnalysis-donor-japan-international-cooperation-agency-jica.html)", 
+"[Profile Report for donor: Spain (Autonomous authorities of)](../reports/iatiAnalysis-donor-spain-autonomous-authorities-of.html)"
 )
 
 # linkoperation <- generate_report(type = "operation")

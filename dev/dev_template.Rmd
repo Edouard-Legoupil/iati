@@ -533,7 +533,6 @@ prompt <- paste0(
 ```
 
 ```{r example-generate_description}
-
 library(ggplot2)
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
@@ -549,6 +548,7 @@ story <- generate_description(structure= extract_structure(p),
                       model = "gpt-4.1-mini",
                       max_tokens_short_desc = 30,
                       max_tokens_long_desc= 500 ) 
+print(story$long_desc)
 ```
 
 ```{r tests-generate_description}
@@ -558,7 +558,6 @@ test_that("generate_description works", {
 ```
 
 ## generate_plot_story
-
 
 ```{r function-generate_plot_story}
 #' Generate Humanitarian Data Story from ggplot
@@ -613,12 +612,11 @@ generate_plot_story <- function(plot,
 ```
  
 
-```{r example-generate_plot_story, eval=FALSE}
-
+```{r example-generate_plot_story, message=FALSE, warning=FALSE, fig.retina = 2, fig.width = 8, fig.asp = 0.818, fig.align = "center",  out.width = "90%" }
 library(ggplot2) 
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
-  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE) +
+  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, font_size = 23) +
   labs(
     title = "Vehicle Efficiency",
     subtitle = "Fuel consumption vs weight",
@@ -626,7 +624,6 @@ p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   )
 
 # generate_plot_story(p, provider = "ollama", model = "deepseek-r1")
-
 story <- generate_plot_story(
   p,
   provider = "azure",
@@ -643,9 +640,6 @@ test_that("generate_plot_story works", {
   expect_true(inherits(generate_plot_story, "function"))
 })
 ```
-
-
-
 
 # Report Rendering
 
