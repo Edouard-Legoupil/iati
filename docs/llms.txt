@@ -328,8 +328,8 @@ easily maintain consistent documentation through a single notebook.
 - [`show_donor_geographic_priority_shift()`](show_donor_geographic_priority_shift.md)
   : Plot donor geographic priority shift over time (alluvial, CVD-safe
   colors + correct labels)
-- [`show_donor_ranking()`](show_donor_ranking.md) : Donor ranking by
-  funding volume (lollipop) with optional WB population/GDP weighting
+- [`show_donor_ranking()`](show_donor_ranking.md) : Generate Donor
+  Ranking Visualizations with Scoring Metrics
 - [`show_donor_transaction_desc()`](show_donor_transaction_desc.md) :
   Plot donor transaction description
 - [`show_donors()`](show_donors.md) : show_donors

@@ -99,11 +99,10 @@ profile_data, generate_description).</p>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span> </span></span>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span> </span></span>
 <span class="r-in"><span><span class="va">p</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">mtcars</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span>x <span class="op">=</span> <span class="va">wt</span>, y <span class="op">=</span> <span class="va">mpg</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span></span>
 <span class="r-in"><span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_point.html" class="external-link">geom_point</a></span><span class="op">(</span><span class="op">)</span> <span class="op">+</span></span></span>
-<span class="r-in"><span>  <span class="fu">unhcrthemes</span><span class="fu">::</span><span class="fu"><a href="https://unhcr-dataviz.github.io/unhcrthemes/reference/theme_unhcr.html" class="external-link">theme_unhcr</a></span><span class="op">(</span>grid <span class="op">=</span> <span class="st">"Y"</span>, axis <span class="op">=</span> <span class="st">"X"</span>, axis_title <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span> <span class="op">+</span></span></span>
+<span class="r-in"><span>  <span class="fu">unhcrthemes</span><span class="fu">::</span><span class="fu"><a href="https://unhcr-dataviz.github.io/unhcrthemes/reference/theme_unhcr.html" class="external-link">theme_unhcr</a></span><span class="op">(</span>grid <span class="op">=</span> <span class="st">"Y"</span>, axis <span class="op">=</span> <span class="st">"X"</span>, axis_title <span class="op">=</span> <span class="cn">FALSE</span>, font_size <span class="op">=</span> <span class="fl">23</span><span class="op">)</span> <span class="op">+</span></span></span>
 <span class="r-in"><span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span></span></span>
 <span class="r-in"><span>    title <span class="op">=</span> <span class="st">"Vehicle Efficiency"</span>,</span></span>
 <span class="r-in"><span>    subtitle <span class="op">=</span> <span class="st">"Fuel consumption vs weight"</span>,</span></span>
@@ -111,7 +110,6 @@ profile_data, generate_description).</p>
 <span class="r-in"><span>  <span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># generate_plot_story(p, provider = "ollama", model = "deepseek-r1")</span></span></span>
-<span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="va">story</span> <span class="op">&lt;-</span> <span class="fu">generate_plot_story</span><span class="op">(</span></span></span>
 <span class="r-in"><span>  <span class="va">p</span>,</span></span>
 <span class="r-in"><span>  provider <span class="op">=</span> <span class="st">"azure"</span>,</span></span>

@@ -2,34 +2,6 @@
 
 ``` r
 library(iati)
-#> Warning: replacing previous import 'cowplot::align_plots' by
-#> 'patchwork::align_plots' when loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_lgl' by 'rlang::flatten_lgl'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::splice' by 'rlang::splice' when
-#> loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_chr' by 'rlang::flatten_chr'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_raw' by 'rlang::flatten_raw'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten' by 'rlang::flatten' when
-#> loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_dbl' by 'rlang::flatten_dbl'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::invoke' by 'rlang::invoke' when
-#> loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_int' by 'rlang::flatten_int'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::discard' by 'scales::discard' when
-#> loading 'iati'
-#> Warning: replacing previous import 'dplyr::lag' by 'stats::lag' when loading
-#> 'iati'
-#> Warning: replacing previous import 'dplyr::filter' by 'stats::filter' when
-#> loading 'iati'
-#> Warning: replacing previous import 'rlang::as_list' by 'xml2::as_list' when
-#> loading 'iati'
-#> Warning: replacing previous import 'stats::filter' by 'dplyr::filter' when
-#> loading 'iati'
 ```
 
 ## Logging Helper

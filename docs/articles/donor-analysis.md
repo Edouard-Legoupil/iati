@@ -35,6 +35,28 @@ library(iati)
 ## show_donor_ranking
 
 ``` r
+#' # Single-year scoring for all donors
+#' show_donor_ranking(year = 2023)
+#'
+#' # Highlight specific donor in single-year scoring
+#' show_donor_ranking(donor_name = "USA", year = 2023)
+#'
+#' # Multi-year trajectory for top 15 donors
+#' show_donor_ranking(year = 2020:2023, top_n_display = 15)
+#'
+#' # With country filtering
+#' show_donor_ranking(
+#'   year = 2023,
+#'   ctr_name = c("Ukraine", "Syria"),
+#'   donor_name = "Germany"
+#' )
+#'
+#' # With GDP weighting in multi-year mode
+#' show_donor_ranking(
+#'   year = 2020:2022,
+#'   weight_by = "gdp",
+#'   top_n_display = 10
+#' )
 # Example usage:
 show_donor_ranking(  
    year = 2025,
@@ -63,6 +85,32 @@ show_donor_ranking(
 ```
 
 ![](donor-analysis_files/figure-html/example-show_donor_ranking-3.png)
+
+## plot_donor_regional_focus_treemap
+
+``` r
+# Example usage:
+plot_donor_regional_focus_treemap(
+  donor_name = "Private donors",
+  year =  2025 
+)
+```
+
+![](donor-analysis_files/figure-html/example-plot_donor_regional_focus_treemap-1.png)
+
+## plot_donor_location_map
+
+``` r
+# Example usage:
+plot_donor_location_map(
+  donor_name = "Private donors",
+  year = 2025,
+  top_n_locations = 5,
+  max_symbol_size = 20
+)
+```
+
+![](donor-analysis_files/figure-html/example-plot_donor_location_map-1.png)
 
 ## show_donor_funding_over_time
 
@@ -331,41 +379,3 @@ show_donor_funding_volatility(donor_name = "Private donors",
 ```
 
 ![](donor-analysis_files/figure-html/example-show_donor_funding_volatility-3.png)
-
-## plot_donor_regional_focus_treemap
-
-``` r
-# Example usage:
-plot_donor_regional_focus_treemap(
-  donor_name = "Private donors",
-  year = c(2023, 2024, 2025),
-  label_font_size = 3
-)
-```
-
-![](donor-analysis_files/figure-html/example-plot_donor_regional_focus_treemap-1.png)
-
-``` r
-
-plot_donor_regional_focus_treemap(
-  donor_name = "Private donors",
-  year = 2025,
-  label_font_size = 5
-)
-```
-
-![](donor-analysis_files/figure-html/example-plot_donor_regional_focus_treemap-2.png)
-
-## plot_donor_location_map
-
-``` r
-# Example usage:
-plot_donor_location_map(
-  donor_name = "Private donors",
-  year = 2025,
-  top_n_locations = 5,
-  max_symbol_size = 20
-)
-```
-
-![](donor-analysis_files/figure-html/example-plot_donor_location_map-1.png)

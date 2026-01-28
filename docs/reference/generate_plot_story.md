@@ -55,7 +55,7 @@ A list containing \`\$short_desc\` and \`\$long_desc\`.
 library(ggplot2) 
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
-  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE) +
+  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, font_size = 23) +
   labs(
     title = "Vehicle Efficiency",
     subtitle = "Fuel consumption vs weight",
@@ -63,7 +63,6 @@ p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   )
 
 # generate_plot_story(p, provider = "ollama", model = "deepseek-r1")
-
 story <- generate_plot_story(
   p,
   provider = "azure",

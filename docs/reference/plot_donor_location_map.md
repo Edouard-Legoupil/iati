@@ -54,8 +54,5 @@ plot_donor_location_map(
   top_n_locations = 5,
   max_symbol_size = 20
 )
-#> Warning: Ignoring unknown parameters: `bg.colour` and `bg.r`
-
 #> Warning: GDAL Error 1: PROJ: pipeline: Pipeline: A forward operation couldn't be constructed
-#> Error in grid.Call(C_convert, x, as.integer(whatfrom), as.integer(whatto),     valid.units(unitTo)): Viewport has zero dimension(s)
 ```

@@ -2,34 +2,6 @@
 
 ``` r
 library(iati)
-#> Warning: replacing previous import 'cowplot::align_plots' by
-#> 'patchwork::align_plots' when loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_lgl' by 'rlang::flatten_lgl'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::splice' by 'rlang::splice' when
-#> loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_chr' by 'rlang::flatten_chr'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_raw' by 'rlang::flatten_raw'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten' by 'rlang::flatten' when
-#> loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_dbl' by 'rlang::flatten_dbl'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::invoke' by 'rlang::invoke' when
-#> loading 'iati'
-#> Warning: replacing previous import 'purrr::flatten_int' by 'rlang::flatten_int'
-#> when loading 'iati'
-#> Warning: replacing previous import 'purrr::discard' by 'scales::discard' when
-#> loading 'iati'
-#> Warning: replacing previous import 'dplyr::lag' by 'stats::lag' when loading
-#> 'iati'
-#> Warning: replacing previous import 'dplyr::filter' by 'stats::filter' when
-#> loading 'iati'
-#> Warning: replacing previous import 'rlang::as_list' by 'xml2::as_list' when
-#> loading 'iati'
-#> Warning: replacing previous import 'stats::filter' by 'dplyr::filter' when
-#> loading 'iati'
 ```
 
 ## Using Language Models to build data stories
@@ -160,7 +132,6 @@ profile_data(p)
 ### generate_description
 
 ``` r
-
 library(ggplot2)
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
@@ -176,16 +147,17 @@ story <- generate_description(structure= extract_structure(p),
                       model = "gpt-4.1-mini",
                       max_tokens_short_desc = 30,
                       max_tokens_long_desc= 500 ) 
+print(story$long_desc)
+#> [1] "The analysis of vehicle efficiency reveals a crucial inverse relationship between vehicle weight and fuel consumption, spotlighting a strategic opportunity to optimize operational costs and environmental impact. With the average vehicle weight at 3.22 metric tons and fuel efficiency averaging 20.1 miles per gallon, data shows that lighter vehicles significantly improve fuel economy. Specifically, every 1-ton reduction in weight correlates with approximately a 5-mile per gallon increase in fuel efficiency. This insight underscores a compelling case for investment in lighter, fuel-efficient vehicle technologies as a high-impact multiplier for donor funds targeting sustainability and cost reduction in logistics. From a fundraising perspective, prioritizing this efficiency lever can enhance resource allocation by reducing fuel expenditure by up to 25%, freeing funds for expanded emergency response and resilience programming. Strategic partnerships with technology innovators and vehicle manufacturers are essential to accelerate adoption, delivering both accountability to environmental goals and measurable return on donor investment. Conversely, overlooking this weight-efficiency nexus risks escalating fuel costs and carbon emissions, undermining operational sustainability and donor confidence. We recommend immediate mobilization of resources toward lightweight vehicle procurement and retrofitting initiatives as a strategic priority. Donors committed to innovation and climate-smart interventions can leverage this data-driven opportunity to scale impact efficiently while advancing UNHCR’s mission. Decision-makers should champion this approach to strengthen cost-effectiveness, reduce carbon footprint, and unlock new partnership avenues. The data compellingly positions vehicle weight reduction as a key investment for maximizing fuel efficiency and operational resilience."
 ```
 
 ### generate_plot_story
 
 ``` r
-
 library(ggplot2) 
 p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   geom_point() +
-  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE) +
+  unhcrthemes::theme_unhcr(grid = "Y", axis = "X", axis_title = FALSE, font_size = 23) +
   labs(
     title = "Vehicle Efficiency",
     subtitle = "Fuel consumption vs weight",
@@ -193,7 +165,6 @@ p <- ggplot(mtcars, aes(x = wt, y = mpg)) +
   )
 
 # generate_plot_story(p, provider = "ollama", model = "deepseek-r1")
-
 story <- generate_plot_story(
   p,
   provider = "azure",
@@ -204,6 +175,8 @@ story <- generate_plot_story(
 # To use as subtitle:
 p + ggplot2::labs(subtitle = story$short_desc)
 ```
+
+![](report-utilities_files/figure-html/example-generate_plot_story-1.png)
 
 ## Report Rendering
 

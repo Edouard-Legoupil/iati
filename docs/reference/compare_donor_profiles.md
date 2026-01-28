@@ -139,6 +139,7 @@ compare_donor_profiles(
   avg_method = "pooled",
   display_mode = "relative"
 )
+#> Warning: Number of colors (n) in the pal_unhcr palette should be between 1 and 8 
 
 
 compare_donor_profiles(
